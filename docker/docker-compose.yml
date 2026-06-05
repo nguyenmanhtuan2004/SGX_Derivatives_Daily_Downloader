@@ -11,8 +11,8 @@ services:
     environment:
       - MINIO_ROOT_USER=minioadmin
       - MINIO_ROOT_PASSWORD=minioadmin
-    # Chạy MinIO server và TẮT hoàn toàn tính năng Web Console bằng `--console-address ":-1"` để tiết kiệm tối đa RAM & CPU
-    command: server /data --console-address ":-1"
+    # Chạy MinIO server và không expose cổng Console (9001) ra ngoài để tiết kiệm tối đa tài nguyên
+    command: server /data
     # Áp dụng giới hạn tài nguyên tiết kiệm cho MinIO
     deploy:
       resources:

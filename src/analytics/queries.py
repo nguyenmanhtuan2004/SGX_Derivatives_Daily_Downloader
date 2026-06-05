@@ -17,11 +17,19 @@ def run_queries(config_path):
     
     # Cài đặt và cấu hình giao tiếp S3 cho DuckDB
     con.execute("INSTALL httpfs; LOAD httpfs;")
-    con.execute(f"SET s3_endpoint='{endpoint}';")
-    con.execute("SET s3_use_ssl=false;")
-    con.execute(f"SET s3_access_key_id='{access_key}';")
-    con.execute(f"SET s3_secret_access_key='{secret_key}';")
-    con.execute("SET s3_url_style='path';")
+    con.execute("INSTALL delta; LOAD delta;")
+    
+    # Sử dụng DuckDB Secret Manager để cấu hình S3/MinIO
+    con.execute(f"""
+        CREATE SECRET secret_minio (
+            TYPE S3,
+            KEY_ID '{access_key}',
+            SECRET '{secret_key}',
+            ENDPOINT '{endpoint}',
+            USE_SSL false,
+            URL_STYLE 'path'
+        );
+    """)
     
     # Định nghĩa đường dẫn Delta Tables trên MinIO
     ticks_path = f"s3://{bucket}/processed/ticks"

@@ -24,6 +24,12 @@ def init_spark_session(config):
         .config("spark.hadoop.fs.s3a.secret.key", secret_key) \
         .config("spark.hadoop.fs.s3a.path.style.access", "true") \
         .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem") \
+        .config("spark.hadoop.fs.s3a.connection.timeout", "60000") \
+        .config("spark.hadoop.fs.s3a.connection.establish.timeout", "5000") \
+        .config("spark.hadoop.fs.s3a.connection.idle.time", "60000") \
+        .config("spark.hadoop.fs.s3a.connection.ttl", "60000") \
+        .config("spark.hadoop.fs.s3a.connection.request.timeout", "60000") \
+        .config("spark.hadoop.fs.s3a.connection.acquisition.timeout", "60000") \
         .getOrCreate()
 
 def run_maintenance(config_path):

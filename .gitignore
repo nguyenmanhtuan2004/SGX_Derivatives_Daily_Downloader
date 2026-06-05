@@ -1,0 +1,33 @@
+# Byte-compiled / optimized / DLL files (Python bytecode)
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Spark temporary directories and metastore
+spark-warehouse/
+metastore_db/
+derby.log
+spark-temp/
+.ivy2/
+
+# SQLite run state database
+state/*.db
+
+# Application logs
+logs/
+*.log
+
+# Python Virtual Environments
+.venv/
+venv/
+env/
+.env
+
+# IDE / Editor configuration
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp

@@ -26,6 +26,12 @@ def init_spark_session(config):
         .config("spark.hadoop.fs.s3a.secret.key", secret_key) \
         .config("spark.hadoop.fs.s3a.path.style.access", "true") \
         .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem") \
+        .config("spark.hadoop.fs.s3a.connection.timeout", "60000") \
+        .config("spark.hadoop.fs.s3a.connection.establish.timeout", "5000") \
+        .config("spark.hadoop.fs.s3a.connection.idle.time", "60000") \
+        .config("spark.hadoop.fs.s3a.connection.ttl", "60000") \
+        .config("spark.hadoop.fs.s3a.connection.request.timeout", "60000") \
+        .config("spark.hadoop.fs.s3a.connection.acquisition.timeout", "60000") \
         .getOrCreate()
 
 def run_etl(date_str, config_path):
@@ -39,46 +45,37 @@ def run_etl(date_str, config_path):
     
     date_normalized = date_str.replace("-", "")
     
-    # 1. Parse Schema từ file .dat
-    parser = SchemaParser(endpoint, access_key, secret_key, bucket)
-    schema_key = f"raw/{date_normalized}/TC_structure.dat"
-    columns_schema = parser.parse_schema(schema_key, fallback_type="tc")
-    
     # 2. Khởi tạo Spark
     spark = init_spark_session(config)
     
-    # 3. Đọc trực tiếp file Text thô từ MinIO Raw Zone
+    # 3. Đọc trực tiếp file Text thô từ MinIO Raw Zone (file TSV phân tách bằng tab)
     tc_path = f"s3a://{bucket}/raw/{date_normalized}/TC_{date_normalized}.txt"
     logger.info(f"Spark đang đọc file text thô từ: {tc_path}")
     
     try:
-        # Đọc dữ liệu text
-        df_raw = spark.read.text(tc_path)
-        
-        # 4. Parse các trường dữ liệu theo Schema
-        df_parsed = df_raw
-        for col_info in columns_schema:
-            name = col_info["name"]
-            start = col_info["start"]
-            length = col_info["length"]
-            
-            df_parsed = df_parsed.withColumn(name, trim(substring(col("value"), start, length)))
-            
-        df_parsed = df_parsed.drop("value")
+        # Đọc dữ liệu TSV
+        df_parsed = spark.read.option("delimiter", "\t").csv(tc_path, header=True, inferSchema=False)
         
         # 5. Làm sạch ngày tháng, ép kiểu số và tạo cột phân vùng
-        date_col = "TradeDate" if "TradeDate" in df_parsed.columns else "Date"
-        
         df_cleaned = df_parsed \
-            .withColumn("TradeDateParsed", to_date(col(date_col), "yyyyMMdd")) \
+            .withColumn("Symbol", trim(col("Commodity"))) \
+            .withColumn("ContractType", trim(col("Contract_Type"))) \
+            .withColumn("DeliveryMonth", trim(col("Delivery_Month"))) \
+            .withColumn("DeliveryYear", trim(col("Delivery_Year"))) \
+            .withColumn("StrikePrice", trim(col("Strike_Price"))) \
+            .withColumn("TradeDate", trim(col("Business_Date"))) \
+            .withColumn("CancelTime", trim(col("Match_Time"))) \
+            .withColumn("PriceIndicator", trim(col("Price_Indicator"))) \
+            .withColumn("MessageCode", trim(col("Message_Code"))) \
+            .withColumn("AmendCode", trim(col("Amend_Code"))) \
+            .withColumn("TradeDateParsed", to_date(col("Business_Date"), "yyyyMMdd")) \
+            .withColumn("Price", col("Price").cast("decimal(18,4)") / 100.0) \
+            .withColumn("Volume", col("Volume").cast("int")) \
             .withColumn("year", year(col("TradeDateParsed"))) \
-            .withColumn("month", month(col("TradeDateParsed")))
-            
-        # Ép kiểu dữ liệu số
-        if "Price" in df_cleaned.columns:
-            df_cleaned = df_cleaned.withColumn("Price", col("Price").cast("decimal(18,4)"))
-        if "Volume" in df_cleaned.columns:
-            df_cleaned = df_cleaned.withColumn("Volume", col("Volume").cast("int"))
+            .withColumn("month", month(col("TradeDateParsed"))) \
+            .select("Symbol", "ContractType", "DeliveryMonth", "DeliveryYear", "StrikePrice",
+                    "TradeDate", "CancelTime", "PriceIndicator", "MessageCode", "AmendCode",
+                    "TradeDateParsed", "Price", "Volume", "year", "month")
             
         # 6. Ghi xuống Delta Table
         output_path = f"s3a://{bucket}/processed/trade_cancellations"

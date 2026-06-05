@@ -28,6 +28,12 @@ def init_spark_session(config):
         .config("spark.hadoop.fs.s3a.secret.key", secret_key) \
         .config("spark.hadoop.fs.s3a.path.style.access", "true") \
         .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem") \
+        .config("spark.hadoop.fs.s3a.connection.timeout", "60000") \
+        .config("spark.hadoop.fs.s3a.connection.establish.timeout", "5000") \
+        .config("spark.hadoop.fs.s3a.connection.idle.time", "60000") \
+        .config("spark.hadoop.fs.s3a.connection.ttl", "60000") \
+        .config("spark.hadoop.fs.s3a.connection.request.timeout", "60000") \
+        .config("spark.hadoop.fs.s3a.connection.acquisition.timeout", "60000") \
         .getOrCreate()
 
 def unzip_rdd_stream(binary_file_tuple):
@@ -54,11 +60,6 @@ def run_etl(date_str, config_path):
     
     date_normalized = date_str.replace("-", "")
     
-    # 1. Parse Schema từ file .dat trên MinIO
-    parser = SchemaParser(endpoint, access_key, secret_key, bucket)
-    schema_key = f"raw/{date_normalized}/TickData_structure.dat"
-    columns_schema = parser.parse_schema(schema_key, fallback_type="tick")
-    
     # 2. Khởi tạo Spark
     spark = init_spark_session(config)
     
@@ -75,36 +76,26 @@ def run_etl(date_str, config_path):
             logger.warning(f"File ZIP {zip_path} không chứa dữ liệu hoặc rỗng.")
             return
             
-        # Chuyển đổi RDD của các dòng text thành DataFrame cột đơn 'value'
-        df_raw = spark.createDataFrame(lines_rdd.map(lambda x: (x,)), ["value"])
-        
-        # 4. Cắt chuỗi dựa trên vị trí cột từ Schema
-        df_parsed = df_raw
-        for col_info in columns_schema:
-            name = col_info["name"]
-            start = col_info["start"]
-            length = col_info["length"]
-            
-            # Cắt chuỗi fixed-width và trim khoảng trắng
-            df_parsed = df_parsed.withColumn(name, trim(substring(col("value"), start, length)))
-        
-        # Loại bỏ cột dữ liệu thô ban đầu
-        df_parsed = df_parsed.drop("value")
+        # Đọc trực tiếp RDD dưới dạng CSV có header
+        df_parsed = spark.read.csv(lines_rdd, header=True, inferSchema=False)
         
         # 5. Làm sạch, định dạng ngày/giờ và tạo cột phân vùng
-        # Giả định cột chứa ngày giao dịch trong schema là 'TradeDate' hoặc 'Date'
-        date_col = "TradeDate" if "TradeDate" in df_parsed.columns else "Date"
-        
         df_cleaned = df_parsed \
-            .withColumn("TradeDateParsed", to_date(col(date_col), "yyyyMMdd")) \
+            .withColumn("Symbol", trim(col("Comm"))) \
+            .withColumn("ContractType", trim(col("Contract_Type"))) \
+            .withColumn("MonthCode", trim(col("Mth_Code"))) \
+            .withColumn("DeliveryYear", trim(col("Year"))) \
+            .withColumn("StrikePrice", trim(col("Strike"))) \
+            .withColumn("TradeTime", trim(col("Log_Time"))) \
+            .withColumn("MessageCode", trim(col("Msg_Code"))) \
+            .withColumn("TradeDateParsed", to_date(col("Trade_Date"), "yyyyMMdd")) \
+            .withColumn("TradePrice", col("Price").cast("decimal(18,4)")) \
+            .withColumn("TradeVolume", col("Volume").cast("int")) \
             .withColumn("year", year(col("TradeDateParsed"))) \
-            .withColumn("month", month(col("TradeDateParsed")))
-            
-        # Ép kiểu dữ liệu số
-        if "TradePrice" in df_cleaned.columns:
-            df_cleaned = df_cleaned.withColumn("TradePrice", col("TradePrice").cast("decimal(18,4)"))
-        if "TradeVolume" in df_cleaned.columns:
-            df_cleaned = df_cleaned.withColumn("TradeVolume", col("TradeVolume").cast("int"))
+            .withColumn("month", month(col("TradeDateParsed"))) \
+            .select("Symbol", "ContractType", "MonthCode", "DeliveryYear", "StrikePrice", 
+                    "TradeTime", "MessageCode", "TradeDateParsed", "TradePrice", "TradeVolume", 
+                    "year", "month")
             
         # 6. Ghi dữ liệu xuống Delta Table tại Processed Zone
         output_path = f"s3a://{bucket}/processed/ticks"
