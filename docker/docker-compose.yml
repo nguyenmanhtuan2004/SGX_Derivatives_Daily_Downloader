@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  minio:
+    image: minio/minio:latest
+    container_name: sgx_minio
+    ports:
+      - "9000:9000" # Chỉ expose cổng API (9000), KHÔNG expose cổng Console (9001)
+    volumes:
+      - minio_data:/data
+    environment:
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWORD=minioadmin
+    # Chạy MinIO server và TẮT hoàn toàn tính năng Web Console bằng `--console-address ":-1"` để tiết kiệm tối đa RAM & CPU
+    command: server /data --console-address ":-1"
+    # Áp dụng giới hạn tài nguyên tiết kiệm cho MinIO
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1g
+    restart: unless-stopped
+
+volumes:
+  minio_data:
+    driver: local
