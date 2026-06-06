@@ -45,6 +45,15 @@ def run_queries(config_path):
         ticks_df = con.execute(f"SELECT * FROM delta_scan('{ticks_path}') LIMIT 5").df()
         print(ticks_df)
         
+        # Truy vấn 1a: Danh sách các năm và tháng hiện có trong cơ sở dữ liệu
+        print("\n1a. Danh sách các năm và tháng có dữ liệu (Phân vùng Delta Lake):")
+        partitions_df = con.execute(f"""
+            SELECT DISTINCT year, month 
+            FROM delta_scan('{ticks_path}') 
+            ORDER BY year DESC, month DESC
+        """).df()
+        print(partitions_df)
+        
         # Truy vấn 2: Thống kê tổng khối lượng giao dịch (Total Volume) theo từng mã sản phẩm
         print("\n2. Tổng khối lượng giao dịch theo sản phẩm (Symbol):")
         vol_df = con.execute(f"""

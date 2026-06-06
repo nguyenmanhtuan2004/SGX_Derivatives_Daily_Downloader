@@ -31,3 +31,7 @@ env/
 *.njsproj
 *.sln
 *.swp
+
+# Ignore all markdown files except README.md
+*.md
+!README.md

@@ -21,6 +21,7 @@ def init_spark_session(config):
     
     return SparkSession.builder \
         .appName("SGX_Tick_Data_ETL") \
+        .config("spark.jars.packages", "io.delta:delta-spark_2.13:4.1.0,org.apache.hadoop:hadoop-aws:3.4.2") \
         .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension") \
         .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog") \
         .config("spark.hadoop.fs.s3a.endpoint", endpoint) \
@@ -37,18 +38,19 @@ def init_spark_session(config):
         .getOrCreate()
 
 def unzip_rdd_stream(binary_file_tuple):
-    """Giải nén file ZIP trực tiếp trong bộ nhớ RAM của Spark Executor"""
+    """Giải nén file ZIP trực tiếp trong bộ nhớ RAM của Spark Executor dưới dạng stream"""
     import zipfile
     import io
     file_path, binary_content = binary_file_tuple
-    lines = []
     with zipfile.ZipFile(io.BytesIO(binary_content)) as z:
         for name in z.namelist():
             with z.open(name) as f:
-                lines.extend(f.read().decode('utf-8').splitlines())
-    return lines
+                # Wrap với TextIOWrapper để stream dòng tránh OOM/crashed python worker
+                text_file = io.TextIOWrapper(f, encoding='utf-8')
+                for line in text_file:
+                    yield line.strip('\r\n')
 
-def run_etl(date_str, config_path):
+def run_etl(date_str, config_path, spark=None):
     # Đọc cấu hình config.ini
     config = configparser.ConfigParser()
     config.read(config_path)
@@ -60,11 +62,18 @@ def run_etl(date_str, config_path):
     
     date_normalized = date_str.replace("-", "")
     
-    # 2. Khởi tạo Spark
-    spark = init_spark_session(config)
+    # 2. Khởi tạo Spark nếu chưa truyền vào
+    should_stop_spark = False
+    if spark is None:
+        spark = init_spark_session(config)
+        should_stop_spark = True
     
     # 3. Đọc và giải nén file ZIP từ MinIO Raw Zone
-    zip_path = f"s3a://{bucket}/raw/{date_normalized}/WEBPXTICK_DT_{date_normalized}.zip"
+    if "*" in date_normalized or "[" in date_normalized or "?" in date_normalized:
+        zip_path = f"s3a://{bucket}/raw/{date_normalized}/WEBPXTICK_DT_*.zip"
+    else:
+        zip_path = f"s3a://{bucket}/raw/{date_normalized}/WEBPXTICK_DT_{date_normalized}.zip"
+        
     logger.info(f"Spark đang đọc file ZIP từ: {zip_path}")
     
     try:
@@ -78,6 +87,9 @@ def run_etl(date_str, config_path):
             
         # Đọc trực tiếp RDD dưới dạng CSV có header
         df_parsed = spark.read.csv(lines_rdd, header=True, inferSchema=False)
+        
+        # Loại bỏ các dòng header bị trùng lặp do ghép nhiều file ZIP
+        df_parsed = df_parsed.filter(col("Comm") != "Comm")
         
         # 5. Làm sạch, định dạng ngày/giờ và tạo cột phân vùng
         df_cleaned = df_parsed \
@@ -113,7 +125,8 @@ def run_etl(date_str, config_path):
         logger.error(f"✗ Lỗi trong quá trình chạy Spark ETL: {e}")
         raise e
     finally:
-        spark.stop()
+        if should_stop_spark:
+            spark.stop()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Spark ETL Tick Data")

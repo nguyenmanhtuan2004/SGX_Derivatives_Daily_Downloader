@@ -19,6 +19,7 @@ def init_spark_session(config):
     
     return SparkSession.builder \
         .appName("SGX_Trade_Cancel_ETL") \
+        .config("spark.jars.packages", "io.delta:delta-spark_2.13:4.1.0,org.apache.hadoop:hadoop-aws:3.4.2") \
         .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension") \
         .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog") \
         .config("spark.hadoop.fs.s3a.endpoint", endpoint) \
@@ -34,7 +35,7 @@ def init_spark_session(config):
         .config("spark.hadoop.fs.s3a.connection.acquisition.timeout", "60000") \
         .getOrCreate()
 
-def run_etl(date_str, config_path):
+def run_etl(date_str, config_path, spark=None):
     config = configparser.ConfigParser()
     config.read(config_path)
     
@@ -45,16 +46,26 @@ def run_etl(date_str, config_path):
     
     date_normalized = date_str.replace("-", "")
     
-    # 2. Khởi tạo Spark
-    spark = init_spark_session(config)
+    # 2. Khởi tạo Spark nếu chưa truyền vào
+    should_stop_spark = False
+    if spark is None:
+        spark = init_spark_session(config)
+        should_stop_spark = True
     
     # 3. Đọc trực tiếp file Text thô từ MinIO Raw Zone (file TSV phân tách bằng tab)
-    tc_path = f"s3a://{bucket}/raw/{date_normalized}/TC_{date_normalized}.txt"
+    if "*" in date_normalized or "[" in date_normalized or "?" in date_normalized:
+        tc_path = f"s3a://{bucket}/raw/{date_normalized}/TC_*.txt"
+    else:
+        tc_path = f"s3a://{bucket}/raw/{date_normalized}/TC_{date_normalized}.txt"
+        
     logger.info(f"Spark đang đọc file text thô từ: {tc_path}")
     
     try:
         # Đọc dữ liệu TSV
         df_parsed = spark.read.option("delimiter", "\t").csv(tc_path, header=True, inferSchema=False)
+        
+        # Loại bỏ các dòng header bị trùng lặp do ghép nhiều file
+        df_parsed = df_parsed.filter(col("Commodity") != "Commodity")
         
         # 5. Làm sạch ngày tháng, ép kiểu số và tạo cột phân vùng
         df_cleaned = df_parsed \
@@ -93,7 +104,8 @@ def run_etl(date_str, config_path):
         logger.error(f"✗ Lỗi trong quá trình chạy Spark ETL: {e}")
         raise e
     finally:
-        spark.stop()
+        if should_stop_spark:
+            spark.stop()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Spark ETL Trade Cancellation")
