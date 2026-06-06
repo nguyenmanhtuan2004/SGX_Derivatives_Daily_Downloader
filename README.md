@@ -28,29 +28,31 @@ graph TD
 
 ```text
 SGX_Derivatives_Daily_Downloader/
-├── config/
-│   └── config.ini              # Cấu hình MinIO, SGX URLs, Retry & Logging
-├── docker/
-│   └── docker-compose.yml      # Cấu hình container chạy MinIO
-├── src/
-│   ├── ingestion/
-│   │   ├── cli.py              # Xử lý tham số đầu vào cho CLI Ingestion
-│   │   ├── downloader.py       # Tải file từ SGX và upload trực tiếp lên MinIO
-│   │   ├── id_resolver.py      # Tự động phân giải ID của ngày cần tải
-│   │   └── recovery.py         # Quản lý lịch sử chạy bằng SQLite (state/ingestion_runs.db)
-│   ├── processing/
-│   │   ├── etl_tick_data.py    # Spark ETL xử lý dữ liệu giao dịch (Tick Data CSV)
-│   │   ├── etl_trade_cancel.py # Spark ETL xử lý dữ liệu giao dịch bị hủy (TC TSV)
-│   │   └── maintenance.py      # Spark Maintenance chạy OPTIMIZE & VACUUM Delta tables
-│   └── analytics/
-│       ├── queries.py          # Báo cáo phân tích dữ liệu Delta Lake qua DuckDB
-│       └── dashboard.py        # Web Dashboard trực quan tương tác bằng Streamlit
-├── state/                      # Lưu trữ cơ sở dữ liệu SQLite quản lý trạng thái
-├── logs/                       # Log chi tiết quá trình tải và xử lý dữ liệu
-├── run_ingestion.py            # File chạy chính của tầng Ingestion (Tải thô từ SGX -> MinIO)
-├── run_etl_backfill.py         # File chạy nạp bù ETL Spark cho nhiều ngày/tháng
-├── requirements.txt            # Danh sách thư viện Python cần thiết
-└── README.md                   # Hướng dẫn này
+├── local_pipeline/             # Pipeline chạy dưới Local (MinIO & PySpark)
+│   ├── config/
+│   │   └── config.ini          # Cấu hình MinIO, SGX, Retry & Logging
+│   ├── docker/
+│   │   └── docker-compose.yml  # File docker-compose khởi động MinIO
+│   ├── src/                    # Mã nguồn các module ETL local
+│   │   ├── ingestion/          # Module tải file & quản lý trạng thái
+│   │   ├── processing/         # Module Spark ETL xử lý Delta Lake local
+│   │   └── analytics/          # Module truy vấn & Streamlit Dashboard
+│   ├── state/                  # Database SQLite lưu log chạy local
+│   ├── logs/                   # Log chi tiết quá trình chạy local
+│   ├── requirements.txt        # Thư viện Python phục vụ chạy local
+│   ├── run_ingestion.py        # Entrypoint chạy tải thô từ SGX -> MinIO
+│   └── run_etl_backfill.py     # Entrypoint chạy nạp bù ETL Spark local
+│
+├── databricks_pipeline/        # Pipeline chạy trên nền tảng Cloud Databricks
+│   ├── 01_Ingestion.py         # Notebook tải dữ liệu -> S3/ADLS
+│   ├── 02_ETL_Tick_Data.py     # Notebook ETL Ticks -> Delta Table
+│   ├── 02_ETL_Trade_Cancel.py  # Notebook ETL Trade Cancel -> Delta Table
+│   ├── 03_Backfill.py          # Notebook loop chạy bù nhiều ngày trên Cloud
+│   ├── 04_Maintenance.py       # Notebook chạy OPTIMIZE & VACUUM Delta tables
+│   └── README.md               # Hướng dẫn setup Secrets & Workflow trên Databricks
+│
+├── databricks_migration_plan.md# Kế hoạch chi tiết và tối ưu hóa lên Databricks
+└── README.md                   # Hướng dẫn tổng quan này
 ```
 
 ---
@@ -67,8 +69,13 @@ SGX_Derivatives_Daily_Downloader/
 
 ## 4. Hướng dẫn cài đặt & Chạy chi tiết (Setup & Run Guide)
 
+Để chạy pipeline local, trước tiên bạn hãy di chuyển vào thư mục `local_pipeline/`:
+```powershell
+cd local_pipeline
+```
+
 ### Bước 1: Khởi động Object Store (MinIO)
-Mở PowerShell tại thư mục gốc dự án và khởi động container MinIO:
+Khởi động container MinIO phục vụ lưu trữ local:
 ```powershell
 docker-compose -f docker/docker-compose.yml up -d
 ```

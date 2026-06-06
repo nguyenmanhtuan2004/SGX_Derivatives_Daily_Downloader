@@ -9,7 +9,7 @@ Thư mục này chứa toàn bộ các Notebook được thiết kế riêng đ�
 Bạn có thể liên kết Git Repo này trực tiếp với Databricks thông qua **Databricks Repos**:
 1. Trong màn hình Databricks, click vào **Repos** -> **Add Repo**.
 2. Dán link Git repository của bạn.
-3. Các file `.py` trong thư mục `databricks_notebooks/` sẽ tự động hiển thị dưới dạng **Databricks Notebooks**.
+3. Các file `.py` trong thư mục `databricks_pipeline/` sẽ tự động hiển thị dưới dạng **Databricks Notebooks**.
 
 ---
 
