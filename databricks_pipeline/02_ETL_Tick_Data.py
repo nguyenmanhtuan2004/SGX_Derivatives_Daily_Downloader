@@ -1,7 +1,7 @@
 # Databricks notebook source
 # DBTITLE 1,Cấu hình Widgets để nhập tham số
 dbutils.widgets.text("date", "", "Ngày chạy (YYYY-MM-DD)")
-dbutils.widgets.text("bucket", "sgx-lakehouse", "Tên Cloud Bucket (S3/ADLS)")
+dbutils.widgets.text("bucket", "sgx-derivatives-daily-data-079", "Tên Cloud Bucket (S3/ADLS)")
 
 # DBTITLE 1,Import thư viện và khởi tạo cấu hình
 from pyspark.sql.functions import col, trim, to_date, year, month
@@ -33,9 +33,9 @@ def unzip_rdd_stream(binary_file_tuple):
                     yield line.strip('\r\n')
 
 # DBTITLE 1,Xử lý ETL bằng Spark
-# Đường dẫn trên cloud (S3 dùng s3:// thay vì s3a:// trên Databricks)
-zip_path = f"s3://{bucket_name}/raw/{date_normalized}/WEBPXTICK_DT_{date_normalized}.zip"
-output_path = f"s3://{bucket_name}/processed/ticks"
+# Đường dẫn trên cloud (sử dụng s3a:// để hỗ trợ xác thực qua Secret Scope hoặc Spark Config)
+zip_path = f"s3a://{bucket_name}/raw/{date_normalized}/WEBPXTICK_DT_{date_normalized}.zip"
+output_path = f"s3a://{bucket_name}/processed/ticks"
 
 logger.info(f"Spark đang đọc file ZIP từ cloud: {zip_path}")
 

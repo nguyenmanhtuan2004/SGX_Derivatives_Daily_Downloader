@@ -1,7 +1,7 @@
 # Databricks notebook source
 # DBTITLE 1,Cấu hình Widgets để nhập tham số
 dbutils.widgets.text("date", "", "Ngày chạy (YYYY-MM-DD) - Để trống nếu chạy ngày hôm nay")
-dbutils.widgets.text("bucket", "sgx-lakehouse", "Tên Cloud Bucket (S3/ADLS)")
+dbutils.widgets.text("bucket", "sgx-derivatives-daily-data-079", "Tên Cloud Bucket (S3/ADLS)")
 dbutils.widgets.text("secret_scope", "sgx-scope", "Databricks Secret Scope Name")
 
 # DBTITLE 1,Import thư viện cần thiết

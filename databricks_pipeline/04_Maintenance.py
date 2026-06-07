@@ -12,8 +12,8 @@ bucket = dbutils.widgets.get("bucket").strip()
 
 # Danh sách bảng cần tối ưu và bảo trì
 tables = [
-    ("ticks", f"s3://{bucket}/processed/ticks"),
-    ("trade_cancellations", f"s3://{bucket}/processed/trade_cancellations")
+    ("ticks", f"s3a://{bucket}/processed/ticks"),
+    ("trade_cancellations", f"s3a://{bucket}/processed/trade_cancellations")
 ]
 
 # DBTITLE 1,Thực thi OPTIMIZE và VACUUM

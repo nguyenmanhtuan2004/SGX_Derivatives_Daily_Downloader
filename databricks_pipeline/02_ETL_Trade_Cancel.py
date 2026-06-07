@@ -1,7 +1,7 @@
 # Databricks notebook source
 # DBTITLE 1,Cấu hình Widgets để nhập tham số
 dbutils.widgets.text("date", "", "Ngày chạy (YYYY-MM-DD)")
-dbutils.widgets.text("bucket", "sgx-lakehouse", "Tên Cloud Bucket (S3/ADLS)")
+dbutils.widgets.text("bucket", "sgx-derivatives-daily-data-079", "Tên Cloud Bucket (S3/ADLS)")
 
 # DBTITLE 1,Import thư viện và cấu hình
 from pyspark.sql.functions import col, trim, to_date, year, month
@@ -20,9 +20,9 @@ if not date_str:
 date_normalized = date_str.replace("-", "")
 
 # DBTITLE 1,Xử lý ETL bằng Spark
-# Đường dẫn trên cloud (S3 dùng s3:// thay vì s3a:// trên Databricks)
-tc_path = f"s3://{bucket_name}/raw/{date_normalized}/TC_{date_normalized}.txt"
-output_path = f"s3://{bucket_name}/processed/trade_cancellations"
+# Đường dẫn trên cloud (sử dụng s3a:// để hỗ trợ xác thực qua Secret Scope hoặc Spark Config)
+tc_path = f"s3a://{bucket_name}/raw/{date_normalized}/TC_{date_normalized}.txt"
+output_path = f"s3a://{bucket_name}/processed/trade_cancellations"
 
 logger.info(f"Spark đang đọc file text thô từ cloud: {tc_path}")
 
