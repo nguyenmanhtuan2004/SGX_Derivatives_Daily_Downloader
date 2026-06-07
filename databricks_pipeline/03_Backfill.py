@@ -2,7 +2,7 @@
 # DBTITLE 1,Cấu hình Widgets để nhập tham số
 dbutils.widgets.text("start_date", "2026-03-01", "Ngày bắt đầu backfill (YYYY-MM-DD)")
 dbutils.widgets.text("end_date", "2026-04-30", "Ngày kết thúc backfill (YYYY-MM-DD)")
-dbutils.widgets.text("bucket", "sgx-lakehouse", "Tên Cloud Bucket (S3/ADLS)")
+dbutils.widgets.text("bucket", "sgx-derivatives-daily-data-079", "Tên Cloud Bucket (S3/ADLS)")
 
 # DBTITLE 1,Import thư viện và cấu hình ngày tháng
 import datetime
