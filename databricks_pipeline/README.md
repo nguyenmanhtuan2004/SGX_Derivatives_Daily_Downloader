@@ -102,10 +102,12 @@ databricks workspace import-dir ./databricks_pipeline /Users/<your-email-address
 
 ---
 
-## 6. Khởi tạo Database
-Trước khi chạy Notebook lần đầu, hãy tạo database trên Databricks để lưu trữ bảng log:
+## 6. Khởi tạo Database và Volume (Unity Catalog)
+Mã nguồn đã được thiết kế tự động khởi tạo Schema (`sgx_lakehouse`) và Volume (`temp_volume`) dưới Catalog hiện hành.
+Tuy nhiên, bạn cũng có thể chạy thủ công các câu lệnh SQL sau trong Databricks để khởi tạo:
 ```sql
-CREATE DATABASE IF NOT EXISTS sgx_lakehouse;
+CREATE SCHEMA IF NOT EXISTS sgx_lakehouse;
+CREATE VOLUME IF NOT EXISTS sgx_lakehouse.temp_volume;
 ```
 
 ---

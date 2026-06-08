@@ -10,9 +10,10 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(me
 logger = logging.getLogger("db_maintenance")
 
 # Danh sách Managed Tables cần tối ưu và bảo trì
+catalog_name = spark.catalog.currentCatalog()
 tables = [
-    ("ticks", "sgx_lakehouse.ticks"),
-    ("trade_cancellations", "sgx_lakehouse.trade_cancellations")
+    ("ticks", f"{catalog_name}.sgx_lakehouse.ticks"),
+    ("trade_cancellations", f"{catalog_name}.sgx_lakehouse.trade_cancellations")
 ]
 
 # DBTITLE 1,Thực thi OPTIMIZE và VACUUM

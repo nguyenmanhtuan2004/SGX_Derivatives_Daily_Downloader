@@ -17,58 +17,72 @@ end_date = datetime.datetime.strptime(end_date_str, "%Y-%m-%d").date()
 
 print(f"Bắt đầu nạp bù lịch sử từ {start_date} đến {end_date}")
 
-# DBTITLE 1,Vòng lặp nạp bù các ngày làm việc (Thứ 2 - Thứ 6)
+# DBTITLE 1,Phase 1: Ingestion hàng loạt (tải từng ngày từ SGX lên S3)
 current_date = start_date
-success_dates = []
-failed_dates = []
+success_ingest_dates = []
+failed_ingest_dates = []
 
+print("=== BẮT ĐẦU PHASE 1: INGESTION HÀNG LOẠT ===")
 while current_date <= end_date:
     # Chỉ chạy các ngày trong tuần
     if current_date.weekday() < 5:
         date_str = current_date.strftime("%Y-%m-%d")
-        print(f"\n==================================================")
-        print(f">>> ĐANG XỬ LÝ NGÀY: {date_str} <<<")
-        print(f"==================================================")
-        
+        print(f"Tải raw data cho ngày: {date_str}...")
         try:
-            # 1. Gọi Notebook Ingestion
-            print(f"1. Gọi Ingestion cho ngày {date_str}...")
             dbutils.notebook.run(
                 "./01_Ingestion", 
                 timeout_seconds=300, 
                 arguments={"date": date_str, "bucket": bucket_name}
             )
-            
-            # 2. Gọi Notebook ETL Tick Data
-            print(f"2. Gọi ETL Ticks cho ngày {date_str}...")
-            dbutils.notebook.run(
-                "./02_ETL_Tick_Data", 
-                timeout_seconds=300, 
-                arguments={"date": date_str, "bucket": bucket_name}
-            )
-            
-            # 3. Gọi Notebook ETL Trade Cancel
-            print(f"3. Gọi ETL Trade Cancel cho ngày {date_str}...")
-            dbutils.notebook.run(
-                "./02_ETL_Trade_Cancel", 
-                timeout_seconds=300, 
-                arguments={"date": date_str, "bucket": bucket_name}
-            )
-            
-            print(f"✓ Hoàn thành thành công ngày: {date_str}")
-            success_dates.append(date_str)
-            
+            success_ingest_dates.append(date_str)
         except Exception as e:
-            print(f"✗ Thất bại ngày: {date_str}. Lỗi: {e}")
-            failed_dates.append(date_str)
+            print(f"✗ Ingestion thất bại ngày: {date_str}. Lỗi: {e}")
+            failed_ingest_dates.append(date_str)
             
     current_date += datetime.timedelta(days=1)
 
-# DBTITLE 1,Báo cáo kết quả
-print("\n================ [BÁO CÁO NẠP BÙ] ================")
-print(f"Thành công ({len(success_dates)} ngày): {success_dates}")
-if failed_dates:
-    print(f"Thất bại ({len(failed_dates)} ngày): {failed_dates}")
-    raise Exception(f"Có ngày bị lỗi trong tiến trình nạp bù: {failed_dates}")
+print(f"\n=== KẾT THÚC PHASE 1: Hoàn thành Ingest {len(success_ingest_dates)} ngày. Lỗi {len(failed_ingest_dates)} ngày. ===")
+
+# DBTITLE 2,Phase 2: Spark Batch ETL (Xử lý gộp tất cả các ngày)
+print("\n=== BẮT ĐẦU PHASE 2: SPARK BATCH ETL ===")
+if success_ingest_dates:
+    try:
+        # Gọi notebook ETL Ticks một lần duy nhất cho toàn bộ khoảng ngày
+        print(f"Gọi Batch ETL Ticks cho khoảng từ {start_date_str} đến {end_date_str}...")
+        dbutils.notebook.run(
+            "./02_ETL_Tick_Data",
+            timeout_seconds=1800,  # Tăng thời gian chờ cho batch lớn
+            arguments={
+                "start_date": start_date_str,
+                "end_date": end_date_str,
+                "bucket": bucket_name
+            }
+        )
+        print("✓ Hoàn thành Batch ETL Ticks thành công!")
+        
+        # Gọi notebook ETL Trade Cancel một lần duy nhất cho toàn bộ khoảng ngày
+        print(f"Gọi Batch ETL Trade Cancel cho khoảng từ {start_date_str} đến {end_date_str}...")
+        dbutils.notebook.run(
+            "./02_ETL_Trade_Cancel",
+            timeout_seconds=1200,
+            arguments={
+                "start_date": start_date_str,
+                "end_date": end_date_str,
+                "bucket": bucket_name
+            }
+        )
+        print("✓ Hoàn thành Batch ETL Trade Cancel thành công!")
+        
+    except Exception as e:
+        print(f"✗ Thất bại trong Phase 2 Batch ETL. Lỗi: {e}")
+        raise e
 else:
-    print("✓ Toàn bộ quá trình nạp bù hoàn tất tốt đẹp!")
+    print("⚠ Không có ngày nào Ingest thành công, bỏ qua Phase 2 ETL.")
+
+# DBTITLE 3,Báo cáo kết quả chung
+print("\n================ [BÁO CÁO NẠP BÙ BATCH] ================")
+print(f"Ingestion thành công ({len(success_ingest_dates)} ngày): {success_ingest_dates}")
+if failed_ingest_dates:
+    print(f"Ingestion thất bại ({len(failed_ingest_dates)} ngày): {failed_ingest_dates}")
+print("✓ Tiến trình nạp bù Batch ETL hoàn tất!")
+

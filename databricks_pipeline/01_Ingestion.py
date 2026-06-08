@@ -119,9 +119,15 @@ class DatabricksSGXDownloader:
                 
         return results
 
+# DBTITLE 1,Khởi tạo Database và Volume dùng Unity Catalog
+catalog_name = spark.catalog.currentCatalog()
+logger.info(f"Đang dùng Catalog: {catalog_name}")
+spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog_name}.sgx_lakehouse")
+spark.sql(f"CREATE VOLUME IF NOT EXISTS {catalog_name}.sgx_lakehouse.temp_volume")
+
 # DBTITLE 1,Khởi tạo table logs trạng thái nếu chưa có
 spark.sql(f"""
-    CREATE TABLE IF NOT EXISTS sgx_lakehouse.ingestion_runs (
+    CREATE TABLE IF NOT EXISTS {catalog_name}.sgx_lakehouse.ingestion_runs (
         job_date STRING,
         status STRING,
         started_at TIMESTAMP,
@@ -143,7 +149,7 @@ started_at = datetime.datetime.now()
 
 # Cập nhật bắt đầu
 spark.sql(f"""
-    INSERT INTO sgx_lakehouse.ingestion_runs 
+    INSERT INTO {catalog_name}.sgx_lakehouse.ingestion_runs 
     VALUES ('{run_date_str}', 'running', CAST('{started_at}' AS TIMESTAMP), NULL, NULL)
 """)
 
@@ -157,7 +163,7 @@ try:
     
     # Cập nhật kết quả vào Delta Log Table
     spark.sql(f"""
-        INSERT INTO sgx_lakehouse.ingestion_runs 
+        INSERT INTO {catalog_name}.sgx_lakehouse.ingestion_runs 
         VALUES ('{run_date_str}', '{final_status}', CAST('{started_at}' AS TIMESTAMP), CAST('{ended_at}' AS TIMESTAMP), '{json.dumps(results)}')
     """)
     
@@ -168,7 +174,7 @@ try:
 except Exception as e:
     ended_at = datetime.datetime.now()
     spark.sql(f"""
-        INSERT INTO sgx_lakehouse.ingestion_runs 
+        INSERT INTO {catalog_name}.sgx_lakehouse.ingestion_runs 
         VALUES ('{run_date_str}', 'failed', CAST('{started_at}' AS TIMESTAMP), CAST('{ended_at}' AS TIMESTAMP), '{str(e)}')
     """)
     raise e
