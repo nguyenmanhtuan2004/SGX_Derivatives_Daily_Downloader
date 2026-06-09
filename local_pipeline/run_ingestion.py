@@ -60,8 +60,8 @@ def run_ingestion_for_date(date_str, id_resolver, downloader, recovery, force=Fa
     # 1. Tìm ID tương ứng trên SGX
     resolved_id = id_resolver.resolve(date_str)
     if not resolved_id:
-        logging.error(f"Không tìm thấy ID phù hợp cho ngày {date_str}. Hủy Job.")
-        recovery.record_end(date_str, [{"filename": "All files", "status": "failed", "error": "Could not resolve ID"}])
+        logging.warning(f"Bỏ qua ngày {date_str} do không tìm thấy ID phù hợp trên SGX (Ngày nghỉ/lễ).")
+        recovery.record_end(date_str, [{"filename": "All files", "status": "skipped", "error": "Holiday/Weekend"}], status_override="skipped")
         return
 
     # 2. Tải và upload trực tiếp lên MinIO Raw Zone

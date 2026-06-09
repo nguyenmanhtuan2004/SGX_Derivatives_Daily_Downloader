@@ -14,6 +14,7 @@ class IDResolver:
         self.headers = {"User-Agent": user_agent}
         self.max_retries = max_retries
         self.delay = delay
+        self.has_network_error = False
 
     def _count_business_days(self, start_date, end_date):
         """Tính số ngày làm việc (Thứ 2 - Thứ 6) giữa hai ngày (có hướng âm/dương)"""
@@ -50,8 +51,12 @@ class IDResolver:
                 if match:
                     date_str = match.group(1)
                     return datetime.datetime.strptime(date_str, "%Y%m%d").date()
+            except requests.RequestException as e:
+                logger.warning(f"Lỗi kết nối mạng khi kiểm tra ID {test_id} (lần {attempt+1}): {e}")
+                self.has_network_error = True
+                time.sleep(self.delay)
             except Exception as e:
-                logger.warning(f"Lỗi khi kiểm tra ID {test_id} (lần {attempt+1}): {e}")
+                logger.warning(f"Lỗi không xác định khi kiểm tra ID {test_id}: {e}")
                 time.sleep(self.delay)
         return None
 
@@ -65,8 +70,12 @@ class IDResolver:
         
         logger.info(f"Đang dò tìm ID cho ngày {target_date_str}. Ước lượng ban đầu: {estimated_id}")
         
+        # Reset cờ lỗi mạng trước mỗi phiên resolve
+        self.has_network_error = False
+        
         current_id = estimated_id
         visited = set()
+        resolved_id = None
         
         # 2. Vòng lặp tinh chỉnh để tìm ID khớp chính xác ngày
         for step in range(15): # Giới hạn tối đa 15 bước nhảy để tránh vòng lặp vô hạn
@@ -76,8 +85,8 @@ class IDResolver:
             
             actual_date = self._check_id_date(current_id)
             if not actual_date:
-                # Nếu đụng ngày 404 (ngày nghỉ/lễ), thử dò các ID lân cận
-                logger.debug(f"ID {current_id} trả về 404, đang dò các ID lân cận...")
+                # Nếu đụng ngày 404 (ngày nghỉ/lễ) hoặc lỗi mạng, thử dò các ID lân cận
+                logger.debug(f"ID {current_id} không xác định ngày thực tế, đang dò các ID lân cận...")
                 found = False
                 for offset in [1, -1, 2, -2]:
                     actual_date = self._check_id_date(current_id + offset)
@@ -92,7 +101,8 @@ class IDResolver:
             
             if actual_date == target_date:
                 logger.info(f"Tìm thấy khớp chính xác: Ngày {target_date_str} ➔ ID {current_id} ✓")
-                return current_id
+                resolved_id = current_id
+                break
             elif actual_date < target_date:
                 # Ngày thực tế nhỏ hơn ngày mong muốn -> Nhảy tiến ID
                 current_id += max(1, (target_date - actual_date).days // 2)
@@ -100,5 +110,14 @@ class IDResolver:
                 # Ngày thực tế lớn hơn ngày mong muốn -> Nhảy lùi ID
                 current_id -= max(1, (actual_date - target_date).days // 2)
                 
-        logger.error(f"Không thể tìm thấy ID phù hợp cho ngày {target_date_str}")
-        return None
+        # 3. Áp dụng Fallback (Phương án A) nếu có lỗi mạng xảy ra hoặc không dò được ID
+        if resolved_id is None:
+            if self.has_network_error:
+                logger.warning(f"✗ Gặp lỗi kết nối mạng trong quá trình dò tìm ID cho ngày {target_date_str}.")
+                logger.warning(f"➔ Kích hoạt Fallback Phương án A: Sử dụng ID ước lượng tính toán tĩnh: {estimated_id}")
+                return estimated_id
+            else:
+                logger.warning(f"✗ Không tìm thấy ID chính xác cho ngày {target_date_str} (có thể là ngày nghỉ/lễ).")
+                return None
+                
+        return resolved_id

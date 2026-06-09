@@ -49,11 +49,14 @@ class RecoveryManager:
             """, (date_str,))
             conn.commit()
 
-    def record_end(self, date_str, file_results):
+    def record_end(self, date_str, file_results, status_override=None):
         """Đánh dấu kết thúc tiến trình và phân tích lỗi"""
-        failed_files = [f for f in file_results if f["status"] == "failed"]
+        failed_files = [f for f in file_results if f.get("status") == "failed"]
         
-        if len(failed_files) == 0:
+        if status_override:
+            status = status_override
+            error_msg = file_results[0].get("error", "") if file_results else ""
+        elif len(failed_files) == 0:
             status = "success"
             error_msg = ""
         elif len(failed_files) == len(file_results):

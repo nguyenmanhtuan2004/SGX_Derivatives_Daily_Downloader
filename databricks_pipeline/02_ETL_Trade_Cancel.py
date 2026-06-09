@@ -55,7 +55,7 @@ volume_path = f"/Volumes/{catalog_name}/sgx_lakehouse/temp_volume"
 local_tmp_dir = f"/tmp/temp_extracted_tc_batch_{int(time.time())}"
 os.makedirs(local_tmp_dir, exist_ok=True)
 
-logger.info(f"Khởi tạo S3 Client và tải dữ liệu thô từ S3 về Local TMP của Driver...")
+logger.info(f"Khởi tạo S3 Client và tải dữ liệu thô từ S3...")
 try:
     access_key = dbutils.secrets.get(scope=scope_name, key="aws-access-key")
     secret_key = dbutils.secrets.get(scope=scope_name, key="aws-secret-key")
@@ -105,6 +105,9 @@ for file_name in os.listdir(local_tmp_dir):
         dest_file = os.path.join(volume_extract_dir, file_name)
         shutil.copy(src_file, dest_file)
 
+# Chờ 2 giây để hệ thống FUSE Mount của Unity Catalog Volume đồng bộ danh sách file thô
+time.sleep(2)
+
 
 # DBTITLE 1,Xử lý ETL bằng Spark
 try:
@@ -134,22 +137,48 @@ try:
         .select("Symbol", "ContractType", "DeliveryMonth", "DeliveryYear", "StrikePrice",
                 "TradeDate", "CancelTime", "PriceIndicator", "MessageCode", "AmendCode",
                 "TradeDateParsed", "Price", "Volume", "year", "month")
+    # 5. Xuất dữ liệu sạch ra Cloud Bucket S3 (dưới dạng CSV) để phục vụ Power BI
+    # Sử dụng Unity Catalog Volume làm thư mục đệm để tránh lỗi LocalFilesystemAccessDeniedException đối với thư mục ngoài /Workspace
+    local_export_dir = os.path.join(volume_path, f"export_csv_tc_{int(time.time())}")
+    logger.info(f"Đang xuất dữ liệu sạch ra thư mục tạm local: {local_export_dir}...")
+    try:
+        # Coalesce(1) để tạo 1 file duy nhất cho mỗi phân vùng ngày
+        df_cleaned.coalesce(1).write \
+            .format("csv") \
+            .option("header", "true") \
+            .mode("overwrite") \
+            .partitionBy("TradeDateParsed") \
+            .save(local_export_dir)
+            
+        logger.info("Đang upload dữ liệu CSV lên S3 từ thư mục tạm...")
+        s3_prefix = "processed/trade_cancellations"
         
-    # 5. Ghi dữ liệu xuống Managed Table (Lưu trữ mặc định của Databricks)
-    logger.info(f"Ghi dữ liệu vào Managed Table: {catalog_name}.sgx_lakehouse.trade_cancellations")
-    
-    # Chỉ coalesce(1) khi xử lý 1 ngày duy nhất để tối ưu hiệu năng ghi của batch lớn
-    write_df = df_cleaned
-    if len(dates_to_process) == 1:
-        write_df = df_cleaned.coalesce(1)
+        # Duyệt qua các thư mục phân vùng và upload lên S3
+        for root, dirs, files in os.walk(local_export_dir):
+            for file in files:
+                if file.endswith(".csv") and not file.startswith("."):
+                    local_file_path = os.path.join(root, file)
+                    # Lấy đường dẫn tương đối (ví dụ: TradeDateParsed=2026-04-27/part-00000-xxx.csv)
+                    rel_path = os.path.relpath(local_file_path, local_export_dir)
+                    rel_path = rel_path.replace("\\", "/")
+                    
+                    # Trích xuất phần tên phân vùng (TradeDateParsed=YYYY-MM-DD)
+                    partition_dir = os.path.dirname(rel_path)
+                    
+                    # Đặt tên file cố định là data.csv trên S3 để tránh trùng lặp
+                    s3_key = f"{s3_prefix}/{partition_dir}/data.csv"
+                    
+                    logger.info(f"Tải lên S3: {local_file_path} -> s3://{bucket_name}/{s3_key}")
+                    s3_client.upload_file(local_file_path, bucket_name, s3_key)
+                    
+        logger.info("✓ Hoàn thành xuất dữ liệu sạch lên S3 thành công!")
+    except Exception as s3_err:
+        logger.warning(f"⚠ Lỗi khi xuất dữ liệu lên S3: {s3_err}")
+    finally:
+        # Dọn dẹp thư mục tạm xuất
+        shutil.rmtree(local_export_dir, ignore_errors=True)
         
-    write_df.write \
-        .format("delta") \
-        .mode("append") \
-        .partitionBy("year", "month") \
-        .saveAsTable(f"{catalog_name}.sgx_lakehouse.trade_cancellations")
-        
-    logger.info(f"✓ Hoàn thành ETL Trade Cancellation cho {len(dates_to_process)} ngày và ghi vào Managed Table thành công!")
+    logger.info(f"✓ Hoàn thành ETL Trade Cancellation cho {len(dates_to_process)} ngày!")
     
 except Exception as e:
     logger.error(f"✗ Gặp lỗi: {e}")
