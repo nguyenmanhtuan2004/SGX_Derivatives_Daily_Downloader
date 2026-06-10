@@ -99,7 +99,15 @@ def get_merged_s3_data(date_str: str) -> Optional[pd.DataFrame]:
         for s3_key in csv_files:
             logger.info(f"Downloading file from S3: {s3_key}")
             csv_obj = s3_client.get_object(Bucket=BUCKET_NAME, Key=s3_key)
-            df_part = pd.read_csv(io.BytesIO(csv_obj["Body"].read()))
+            df_part = pd.read_csv(
+                io.BytesIO(csv_obj["Body"].read()),
+                usecols=["Symbol", "TradeTime", "MessageCode", "TradePrice", "TradeVolume"],
+                dtype={
+                    "Symbol": "category",
+                    "MessageCode": "category",
+                    "TradeTime": "str"
+                }
+            )
             if not df_part.empty:
                 dataframes.append(df_part)
                 
