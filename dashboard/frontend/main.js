@@ -398,7 +398,8 @@ function formatDateString(dateStr) {
 }
 
 function formatNumber(num) {
-    return num.toString().replace(/\B(?=(\d{3})+(?!\n))/g, ",");
+    if (num === null || num === undefined) return "-";
+    return Number(num).toLocaleString("en-US");
 }
 
 function logger(...args) {
