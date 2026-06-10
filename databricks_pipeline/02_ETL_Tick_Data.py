@@ -7,7 +7,7 @@ dbutils.widgets.text("bucket", "sgx-derivatives-daily-data-079", "Tên Cloud Buc
 dbutils.widgets.text("secret_scope", "sgx-scope", "Databricks Secret Scope Name")
 
 # DBTITLE 1,Import thư viện và khởi tạo cấu hình
-from pyspark.sql.functions import col, trim, to_date, year, month
+from pyspark.sql.functions import col, trim, to_date, year, month, regexp_replace, lpad, substring, sum, count
 import logging
 import boto3
 import os
@@ -68,6 +68,27 @@ try:
 except Exception as e:
     logger.error(f"✗ Lỗi khởi tạo S3 client: {e}")
     raise e
+
+def delete_s3_folder(bucket, prefix):
+    try:
+        # Sử dụng paginator để liệt kê tất cả các tệp có tiền tố (prefix) trên S3
+        paginator = s3_client.get_paginator('list_objects_v2')
+        pages = paginator.paginate(Bucket=bucket, Prefix=prefix)
+        delete_us = []
+        for page in pages:
+            if 'Contents' in page:
+                for obj in page['Contents']:
+                    delete_us.append({'Key': obj['Key']})
+        # Xóa các tệp theo batch tối đa 1000 đối tượng
+        if delete_us:
+            for i in range(0, len(delete_us), 1000):
+                s3_client.delete_objects(
+                    Bucket=bucket,
+                    Delete={'Objects': delete_us[i:i+1000]}
+                )
+            logger.info(f"✓ Đã dọn dẹp {len(delete_us)} tệp cũ trên S3 tại: s3://{bucket}/{prefix}")
+    except Exception as e:
+        logger.warning(f"Không thể dọn dẹp thư mục cũ trên S3 s3://{bucket}/{prefix}: {e}")
 
 # 2. Tải và giải nén lần lượt từng ngày vào thư mục tạm cục bộ /tmp
 for d in dates_to_process:
@@ -150,43 +171,93 @@ try:
     # 6. Xuất dữ liệu sạch ra Cloud Bucket S3 (dưới dạng CSV) để phục vụ Power BI
     # Sử dụng Unity Catalog Volume làm thư mục đệm để tránh lỗi LocalFilesystemAccessDeniedException đối với thư mục ngoài /Workspace
     local_export_dir = os.path.join(volume_path, f"export_csv_ticks_{int(time.time())}")
-    logger.info(f"Đang xuất dữ liệu sạch ra thư mục tạm local: {local_export_dir}...")
+    local_export_summary_dir = os.path.join(volume_path, f"export_csv_ticks_summary_{int(time.time())}")
+    logger.info(f"Đang xuất dữ liệu sạch và dữ liệu summary ra thư mục tạm local...")
     try:
-        # Coalesce(1) để tạo 1 file duy nhất cho mỗi phân vùng ngày
-        df_cleaned.coalesce(1).write \
+        # A. Xuất dữ liệu ticks thô
+        # Không dùng coalesce(1) để Spark có thể ghi song song trên nhiều Worker
+        df_cleaned.write \
             .format("csv") \
             .option("header", "true") \
             .mode("overwrite") \
             .partitionBy("TradeDateParsed") \
             .save(local_export_dir)
             
+        # B. Tính toán dữ liệu pre-aggregated (summary) để tối ưu hóa Dashboard
+        logger.info("Đang tính toán dữ liệu pre-aggregated (summary)...")
+        df_with_hour = df_cleaned.withColumn(
+            "Hour", 
+            substring(lpad(regexp_replace(col("TradeTime"), ":", ""), 6, "0"), 1, 2)
+        )
+        df_summary = df_with_hour.groupBy("TradeDateParsed", "Symbol", "MessageCode", "Hour") \
+            .agg(
+                sum("TradeVolume").alias("GroupVolume"),
+                count("*").alias("GroupTradeCount"),
+                sum(col("TradePrice") * col("TradeVolume")).alias("GroupPriceVolume"),
+                sum("TradePrice").alias("GroupPriceSum")
+            )
+            
+        # Xuất dữ liệu summary
+        df_summary.coalesce(1).write \
+            .format("csv") \
+            .option("header", "true") \
+            .mode("overwrite") \
+            .partitionBy("TradeDateParsed") \
+            .save(local_export_summary_dir)
+            
         logger.info("Đang upload dữ liệu CSV lên S3 từ thư mục tạm...")
         s3_prefix = "processed/ticks"
+        s3_summary_prefix = "processed/ticks_summary"
         
-        # Duyệt qua các thư mục phân vùng và upload lên S3
+        # A. Gom các file CSV theo từng phân vùng ngày thô để xử lý
+        partition_files = {}
         for root, dirs, files in os.walk(local_export_dir):
             for file in files:
                 if file.endswith(".csv") and not file.startswith("."):
                     local_file_path = os.path.join(root, file)
-                    # Lấy đường dẫn tương đối (ví dụ: TradeDateParsed=2026-04-27/part-00000-xxx.csv)
-                    rel_path = os.path.relpath(local_file_path, local_export_dir)
-                    rel_path = rel_path.replace("\\", "/")
-                    
-                    # Trích xuất phần tên phân vùng (TradeDateParsed=YYYY-MM-DD)
+                    rel_path = os.path.relpath(local_file_path, local_export_dir).replace("\\", "/")
                     partition_dir = os.path.dirname(rel_path)
+                    if partition_dir not in partition_files:
+                        partition_files[partition_dir] = []
+                    partition_files[partition_dir].append(local_file_path)
                     
-                    # Đặt tên file cố định là data.csv trên S3 để tránh trùng lặp
-                    s3_key = f"{s3_prefix}/{partition_dir}/data.csv"
+        # Dọn dẹp S3 và tải lên ticks thô
+        for partition_dir, file_paths in partition_files.items():
+            s3_partition_prefix = f"{s3_prefix}/{partition_dir}/"
+            delete_s3_folder(bucket_name, s3_partition_prefix)
+            for idx, local_file_path in enumerate(sorted(file_paths)):
+                s3_key = f"{s3_partition_prefix}data.csv" if len(file_paths) == 1 else f"{s3_partition_prefix}part_{idx}.csv"
+                logger.info(f"Tải lên S3 Ticks: {local_file_path} -> s3://{bucket_name}/{s3_key}")
+                s3_client.upload_file(local_file_path, bucket_name, s3_key)
+
+        # B. Gom các file CSV theo từng phân vùng ngày summary để xử lý
+        partition_summary_files = {}
+        for root, dirs, files in os.walk(local_export_summary_dir):
+            for file in files:
+                if file.endswith(".csv") and not file.startswith("."):
+                    local_file_path = os.path.join(root, file)
+                    rel_path = os.path.relpath(local_file_path, local_export_summary_dir).replace("\\", "/")
+                    partition_dir = os.path.dirname(rel_path)
+                    if partition_dir not in partition_summary_files:
+                        partition_summary_files[partition_dir] = []
+                    partition_summary_files[partition_dir].append(local_file_path)
                     
-                    logger.info(f"Tải lên S3: {local_file_path} -> s3://{bucket_name}/{s3_key}")
-                    s3_client.upload_file(local_file_path, bucket_name, s3_key)
+        # Dọn dẹp S3 và tải lên summary
+        for partition_dir, file_paths in partition_summary_files.items():
+            s3_partition_prefix = f"{s3_summary_prefix}/{partition_dir}/"
+            delete_s3_folder(bucket_name, s3_partition_prefix)
+            for idx, local_file_path in enumerate(sorted(file_paths)):
+                s3_key = f"{s3_partition_prefix}summary.csv" if len(file_paths) == 1 else f"{s3_partition_prefix}part_{idx}.csv"
+                logger.info(f"Tải lên S3 Summary: {local_file_path} -> s3://{bucket_name}/{s3_key}")
+                s3_client.upload_file(local_file_path, bucket_name, s3_key)
                     
-        logger.info("✓ Hoàn thành xuất dữ liệu sạch lên S3 thành công!")
+        logger.info("✓ Hoàn thành xuất dữ liệu sạch và summary lên S3 thành công!")
     except Exception as s3_err:
         logger.warning(f"⚠ Lỗi khi xuất dữ liệu lên S3: {s3_err}")
     finally:
         # Dọn dẹp thư mục tạm xuất
         shutil.rmtree(local_export_dir, ignore_errors=True)
+        shutil.rmtree(local_export_summary_dir, ignore_errors=True)
         
     logger.info(f"✓ Hoàn thành ETL Tick Data cho {len(dates_to_process)} ngày!")
     

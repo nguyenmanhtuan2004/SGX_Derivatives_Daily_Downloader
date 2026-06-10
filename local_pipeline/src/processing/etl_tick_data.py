@@ -4,7 +4,7 @@ import argparse
 import configparser
 import logging
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, substring, trim, to_date, year, month
+from pyspark.sql.functions import col, substring, trim, to_date, year, month, regexp_replace, lpad, sum, count
 
 # Thêm src vào path để nhận diện module local
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
@@ -109,7 +109,7 @@ def run_etl(date_str, config_path, spark=None):
                     "TradeTime", "MessageCode", "TradeDateParsed", "TradePrice", "TradeVolume", 
                     "year", "month")
             
-        # 6. Ghi dữ liệu xuống Delta Table tại Processed Zone
+        # 6. Ghi dữ liệu xuống Delta Table tại Processed Zone (dữ liệu thô)
         output_path = f"s3a://{bucket}/processed/ticks"
         logger.info(f"Đang ghi dữ liệu vào Delta Table: {output_path}")
         
@@ -118,8 +118,31 @@ def run_etl(date_str, config_path, spark=None):
             .mode("append") \
             .partitionBy("year", "month") \
             .save(output_path)
+
+        # 6.5. Tính toán dữ liệu pre-aggregated (summary) cho Local Dashboard
+        logger.info("Đang tính toán dữ liệu pre-aggregated (summary)...")
+        df_with_hour = df_cleaned.withColumn(
+            "Hour", 
+            substring(lpad(regexp_replace(col("TradeTime"), ":", ""), 6, "0"), 1, 2)
+        )
+        df_summary = df_with_hour.groupBy("TradeDateParsed", "Symbol", "MessageCode", "Hour") \
+            .agg(
+                sum("TradeVolume").alias("GroupVolume"),
+                count("*").alias("GroupTradeCount"),
+                sum(col("TradePrice") * col("TradeVolume")).alias("GroupPriceVolume"),
+                sum("TradePrice").alias("GroupPriceSum")
+            )
+
+        summary_path = f"s3a://{bucket}/processed/ticks_summary"
+        logger.info(f"Đang ghi dữ liệu summary vào: {summary_path}")
+        df_summary.coalesce(1).write \
+            .format("csv") \
+            .option("header", "true") \
+            .mode("overwrite") \
+            .partitionBy("TradeDateParsed") \
+            .save(summary_path)
             
-        logger.info("✓ Hoàn thành ETL Tick Data thành công!")
+        logger.info("✓ Hoàn thành ETL Tick Data và summary thành công!")
         
     except Exception as e:
         logger.error(f"✗ Lỗi trong quá trình chạy Spark ETL: {e}")

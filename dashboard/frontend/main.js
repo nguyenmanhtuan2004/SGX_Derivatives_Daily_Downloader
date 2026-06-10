@@ -94,7 +94,7 @@ async function fetchDates() {
             opt.disabled = true;
             dateSelect.add(opt);
             hideLoading();
-            showError("Không tìm thấy bất kỳ phân vùng ngày nào trong thư mục processed/ticks/ trên S3.");
+            showError("Không tìm thấy bất kỳ phân vùng ngày nào trong thư mục processed/ticks_summary/ trên S3.");
             return;
         }
 

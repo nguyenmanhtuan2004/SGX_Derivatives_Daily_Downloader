@@ -3,6 +3,7 @@
 dbutils.widgets.text("start_date", "2026-03-01", "Ngày bắt đầu backfill (YYYY-MM-DD)")
 dbutils.widgets.text("end_date", "2026-04-30", "Ngày kết thúc backfill (YYYY-MM-DD)")
 dbutils.widgets.text("bucket", "sgx-derivatives-daily-data-079", "Tên Cloud Bucket (S3/ADLS)")
+dbutils.widgets.dropdown("skip_ingestion", "False", ["False", "True"], "Bỏ qua Ingestion (Nếu raw data đã có trên S3)")
 
 # DBTITLE 1,Import thư viện và cấu hình ngày tháng
 import datetime
@@ -11,11 +12,13 @@ import time
 start_date_str = dbutils.widgets.get("start_date").strip()
 end_date_str = dbutils.widgets.get("end_date").strip()
 bucket_name = dbutils.widgets.get("bucket").strip()
+skip_ingestion_str = dbutils.widgets.get("skip_ingestion").strip()
 
 start_date = datetime.datetime.strptime(start_date_str, "%Y-%m-%d").date()
 end_date = datetime.datetime.strptime(end_date_str, "%Y-%m-%d").date()
+skip_ingestion = skip_ingestion_str == "True"
 
-print(f"Bắt đầu nạp bù lịch sử từ {start_date} đến {end_date}")
+print(f"Bắt đầu nạp bù lịch sử từ {start_date} đến {end_date} (Bỏ qua Ingestion: {skip_ingestion})")
 
 # DBTITLE 1,Phase 1: Ingestion hàng loạt (tải từng ngày từ SGX lên S3)
 current_date = start_date
@@ -23,23 +26,31 @@ success_ingest_dates = []
 failed_ingest_dates = []
 
 print("=== BẮT ĐẦU PHASE 1: INGESTION HÀNG LOẠT ===")
-while current_date <= end_date:
-    # Chỉ chạy các ngày trong tuần
-    if current_date.weekday() < 5:
-        date_str = current_date.strftime("%Y-%m-%d")
-        print(f"Tải raw data cho ngày: {date_str}...")
-        try:
-            dbutils.notebook.run(
-                "./01_Ingestion", 
-                timeout_seconds=300, 
-                arguments={"date": date_str, "bucket": bucket_name}
-            )
-            success_ingest_dates.append(date_str)
-        except Exception as e:
-            print(f"✗ Ingestion thất bại ngày: {date_str}. Lỗi: {e}")
-            failed_ingest_dates.append(date_str)
-            
-    current_date += datetime.timedelta(days=1)
+if skip_ingestion:
+    print("➔ Bỏ qua Phase 1 Ingestion theo cấu hình. Tự động thêm toàn bộ ngày trong khoảng vào danh sách ETL.")
+    temp_date = start_date
+    while temp_date <= end_date:
+        if temp_date.weekday() < 5:
+            success_ingest_dates.append(temp_date.strftime("%Y-%m-%d"))
+        temp_date += datetime.timedelta(days=1)
+else:
+    while current_date <= end_date:
+        # Chỉ chạy các ngày trong tuần
+        if current_date.weekday() < 5:
+            date_str = current_date.strftime("%Y-%m-%d")
+            print(f"Tải raw data cho ngày: {date_str}...")
+            try:
+                dbutils.notebook.run(
+                    "./01_Ingestion", 
+                    timeout_seconds=300, 
+                    arguments={"date": date_str, "bucket": bucket_name}
+                )
+                success_ingest_dates.append(date_str)
+            except Exception as e:
+                print(f"✗ Ingestion thất bại ngày: {date_str}. Lỗi: {e}")
+                failed_ingest_dates.append(date_str)
+                
+        current_date += datetime.timedelta(days=1)
 
 print(f"\n=== KẾT THÚC PHASE 1: Hoàn thành Ingest {len(success_ingest_dates)} ngày. Lỗi {len(failed_ingest_dates)} ngày. ===")
 

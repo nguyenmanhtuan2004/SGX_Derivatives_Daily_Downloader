@@ -59,16 +59,16 @@ def get_s3_client():
 s3_client = get_s3_client()
 
 def list_available_dates_from_s3() -> List[str]:
-    """Lists available dates by scanning partition prefixes in s3://bucket/processed/ticks/"""
+    """Lists available dates by scanning partition prefixes in s3://bucket/processed/ticks_summary/"""
     dates = set()
     try:
         paginator = s3_client.get_paginator("list_objects_v2")
-        # List subfolders under processed/ticks/
-        pages = paginator.paginate(Bucket=BUCKET_NAME, Prefix="processed/ticks/", Delimiter="/")
+        # List subfolders under processed/ticks_summary/
+        pages = paginator.paginate(Bucket=BUCKET_NAME, Prefix="processed/ticks_summary/", Delimiter="/")
         for page in pages:
             if "CommonPrefixes" in page:
                 for prefix in page["CommonPrefixes"]:
-                    # prefix is like "processed/ticks/TradeDateParsed=YYYY-MM-DD/"
+                    # prefix is like "processed/ticks_summary/TradeDateParsed=YYYY-MM-DD/"
                     folder_name = prefix["Prefix"].strip("/").split("/")[-1]
                     if "TradeDateParsed=" in folder_name:
                         date_str = folder_name.split("=")[-1]
@@ -79,22 +79,28 @@ def list_available_dates_from_s3() -> List[str]:
         return []
 
 def fetch_and_aggregate_s3_data(date_str: str) -> Optional[Dict[str, Any]]:
-    """Downloads all CSV part files for a given date partition and computes aggregations in a streaming fashion to save RAM"""
-    prefix = f"processed/ticks/TradeDateParsed={date_str}/"
+    """Downloads all CSV summary files for a given date partition and computes final response dashboard-data without losing data"""
+    prefix = f"processed/ticks_summary/TradeDateParsed={date_str}/"
     logger.info(f"Listing S3 files in prefix: {prefix}")
     
     try:
         response = s3_client.list_objects_v2(Bucket=BUCKET_NAME, Prefix=prefix)
+        
+        # Fallback to raw ticks if summary is not found
         if "Contents" not in response:
-            logger.warning(f"No objects found for prefix: {prefix}")
-            return None
-            
+            logger.warning(f"No summary files found for prefix: {prefix}. Trying raw ticks fallback.")
+            prefix = f"processed/ticks/TradeDateParsed={date_str}/"
+            response = s3_client.list_objects_v2(Bucket=BUCKET_NAME, Prefix=prefix)
+            if "Contents" not in response:
+                logger.warning(f"No raw ticks found for prefix: {prefix}")
+                return None
+                
         csv_files = [obj["Key"] for obj in response["Contents"] if obj["Key"].endswith(".csv")]
         if not csv_files:
-            logger.warning(f"No CSV files found for date {date_str}")
+            logger.warning(f"No CSV files found for date {date_str} under prefix: {prefix}")
             return None
             
-        # Initialize running aggregates to avoid loading all rows to memory at once
+        # Initialize aggregates
         total_volume = 0
         total_trades = 0
         total_price_volume = 0.0
@@ -109,60 +115,98 @@ def fetch_and_aggregate_s3_data(date_str: str) -> Optional[Dict[str, Any]]:
         # Message distribution: msg_code -> count
         message_stats = {}
         
-        # Process each part file in a streaming way
+        # Process each CSV file (could be one summary.csv or multiple part-*.csv files)
         for s3_key in csv_files:
             logger.info(f"Streaming and parsing S3 object: {s3_key}")
             csv_obj = s3_client.get_object(Bucket=BUCKET_NAME, Key=s3_key)
             
-            # Use io.TextIOWrapper to stream bytes directly as text line-by-line
-            # This avoids downloading the entire file into RAM!
             stream = io.TextIOWrapper(csv_obj["Body"], encoding='utf-8')
             reader = csv.DictReader(stream)
             
-            for row in reader:
-                symbol = row.get("Symbol")
-                # Skip invalid rows or repeated headers
-                if not symbol or symbol == "Symbol":
-                    continue
-                
-                try:
-                    volume = int(row.get("TradeVolume", 0) or 0)
-                except ValueError:
-                    volume = 0
-                    
-                try:
-                    price = float(row.get("TradePrice", 0.0) or 0.0)
-                except ValueError:
-                    price = 0.0
-                    
-                msg_code = row.get("MessageCode", "")
-                trade_time = row.get("TradeTime", "")
-                
-                # 1. Update overall statistics
-                total_volume += volume
-                total_trades += 1
-                total_price_volume += price * volume
-                total_price_sum += price
-                
-                # 2. Update product distribution
-                if symbol not in product_stats:
-                    product_stats[symbol] = {"TradeVolume": 0, "TradeCount": 0}
-                product_stats[symbol]["TradeVolume"] += volume
-                product_stats[symbol]["TradeCount"] += 1
-                
-                # 3. Update hourly trend
-                # TradeTime can be formatted as HHMMSS or HH:MM:SS
-                hour = trade_time.replace(":", "")[:2].zfill(2)
-                if hour.isdigit() and int(hour) < 24:
-                    hourly_stats[hour]["volume"] += volume
-                    hourly_stats[hour]["count"] += 1
-                    hourly_stats[hour]["price_sum"] += price
-                    
-                # 4. Update message distribution
-                if msg_code:
-                    message_stats[msg_code] = message_stats.get(msg_code, 0) + 1
+            # Check if this is a summary file or a raw tick file
+            is_summary = "ticks_summary" in s3_key
             
-            # Close stream to release memory
+            for row in reader:
+                symbol = row.get("Symbol") or row.get("Comm")
+                if not symbol or symbol == "Symbol" or symbol == "Comm":
+                    continue
+                    
+                if is_summary:
+                    # Summary format parsing
+                    hour = row.get("Hour", "").zfill(2)
+                    msg_code = row.get("MessageCode", "")
+                    
+                    try:
+                        group_volume = int(row.get("GroupVolume", 0) or 0)
+                    except ValueError:
+                        group_volume = 0
+                        
+                    try:
+                        group_trade_count = int(row.get("GroupTradeCount", 0) or 0)
+                    except ValueError:
+                        group_trade_count = 0
+                        
+                    try:
+                        group_price_volume = float(row.get("GroupPriceVolume", 0.0) or 0.0)
+                    except ValueError:
+                        group_price_volume = 0.0
+                        
+                    try:
+                        group_price_sum = float(row.get("GroupPriceSum", 0.0) or 0.0)
+                    except ValueError:
+                        group_price_sum = 0.0
+                        
+                    total_volume += group_volume
+                    total_trades += group_trade_count
+                    total_price_volume += group_price_volume
+                    total_price_sum += group_price_sum
+                    
+                    if symbol not in product_stats:
+                        product_stats[symbol] = {"TradeVolume": 0, "TradeCount": 0}
+                    product_stats[symbol]["TradeVolume"] += group_volume
+                    product_stats[symbol]["TradeCount"] += group_trade_count
+                    
+                    if hour.isdigit() and int(hour) < 24:
+                        hourly_stats[hour]["volume"] += group_volume
+                        hourly_stats[hour]["count"] += group_trade_count
+                        hourly_stats[hour]["price_sum"] += group_price_sum
+                        
+                    if msg_code:
+                        message_stats[msg_code] = message_stats.get(msg_code, 0) + group_trade_count
+                else:
+                    # Raw tick format parsing (Fallback)
+                    try:
+                        volume = int(row.get("TradeVolume", 0) or int(row.get("Volume", 0) or 0))
+                    except ValueError:
+                        volume = 0
+                        
+                    try:
+                        price = float(row.get("TradePrice", 0.0) or float(row.get("Price", 0.0) or 0.0))
+                    except ValueError:
+                        price = 0.0
+                        
+                    msg_code = row.get("MessageCode", "") or row.get("Msg_Code", "")
+                    trade_time = row.get("TradeTime", "") or row.get("Log_Time", "")
+                    
+                    total_volume += volume
+                    total_trades += 1
+                    total_price_volume += price * volume
+                    total_price_sum += price
+                    
+                    if symbol not in product_stats:
+                        product_stats[symbol] = {"TradeVolume": 0, "TradeCount": 0}
+                    product_stats[symbol]["TradeVolume"] += volume
+                    product_stats[symbol]["TradeCount"] += 1
+                    
+                    hour = trade_time.replace(":", "")[:2].zfill(2)
+                    if hour.isdigit() and int(hour) < 24:
+                        hourly_stats[hour]["volume"] += volume
+                        hourly_stats[hour]["count"] += 1
+                        hourly_stats[hour]["price_sum"] += price
+                        
+                    if msg_code:
+                        message_stats[msg_code] = message_stats.get(msg_code, 0) + 1
+                        
             stream.close()
             
         if total_trades == 0:
@@ -211,7 +255,7 @@ def fetch_and_aggregate_s3_data(date_str: str) -> Optional[Dict[str, Any]]:
         }
         
     except Exception as e:
-        logger.error(f"Error streaming data from S3 for date {date_str}: {e}")
+        logger.error(f"Error reading and aggregating S3 files for date {date_str}: {e}")
         return None
 
 @app.get("/api/dates", response_model=List[str])
