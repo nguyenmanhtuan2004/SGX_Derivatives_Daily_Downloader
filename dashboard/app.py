@@ -1,15 +1,14 @@
 import os
 import io
+import csv
 import json
 import logging
 from typing import List, Dict, Any, Optional
 import boto3
-import pandas as pd
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
 from dotenv import load_dotenv
 
 # Load env variables if .env exists
@@ -79,8 +78,8 @@ def list_available_dates_from_s3() -> List[str]:
         logger.error(f"Error listing dates from S3 bucket {BUCKET_NAME}: {e}")
         return []
 
-def get_merged_s3_data(date_str: str) -> Optional[pd.DataFrame]:
-    """Downloads all CSV part files for a given date partition and merges them into a Pandas DataFrame"""
+def fetch_and_aggregate_s3_data(date_str: str) -> Optional[Dict[str, Any]]:
+    """Downloads all CSV part files for a given date partition and computes aggregations in a streaming fashion to save RAM"""
     prefix = f"processed/ticks/TradeDateParsed={date_str}/"
     logger.info(f"Listing S3 files in prefix: {prefix}")
     
@@ -95,80 +94,125 @@ def get_merged_s3_data(date_str: str) -> Optional[pd.DataFrame]:
             logger.warning(f"No CSV files found for date {date_str}")
             return None
             
-        dataframes = []
+        # Initialize running aggregates to avoid loading all rows to memory at once
+        total_volume = 0
+        total_trades = 0
+        total_price_volume = 0.0
+        total_price_sum = 0.0
+        
+        # Product distribution: symbol -> {volume, count}
+        product_stats = {}
+        
+        # Hourly trend: hour -> {volume, count, price_sum}
+        hourly_stats = {str(h).zfill(2): {"volume": 0, "count": 0, "price_sum": 0.0} for h in range(24)}
+        
+        # Message distribution: msg_code -> count
+        message_stats = {}
+        
+        # Process each part file in a streaming way
         for s3_key in csv_files:
-            logger.info(f"Downloading file from S3: {s3_key}")
+            logger.info(f"Streaming and parsing S3 object: {s3_key}")
             csv_obj = s3_client.get_object(Bucket=BUCKET_NAME, Key=s3_key)
-            df_part = pd.read_csv(
-                io.BytesIO(csv_obj["Body"].read()),
-                usecols=["Symbol", "TradeTime", "MessageCode", "TradePrice", "TradeVolume"],
-                dtype={
-                    "Symbol": "category",
-                    "MessageCode": "category",
-                    "TradeTime": "str"
-                }
-            )
-            if not df_part.empty:
-                dataframes.append(df_part)
+            
+            # Use io.TextIOWrapper to stream bytes directly as text line-by-line
+            # This avoids downloading the entire file into RAM!
+            stream = io.TextIOWrapper(csv_obj["Body"], encoding='utf-8')
+            reader = csv.DictReader(stream)
+            
+            for row in reader:
+                symbol = row.get("Symbol")
+                # Skip invalid rows or repeated headers
+                if not symbol or symbol == "Symbol":
+                    continue
                 
-        if not dataframes:
+                try:
+                    volume = int(row.get("TradeVolume", 0) or 0)
+                except ValueError:
+                    volume = 0
+                    
+                try:
+                    price = float(row.get("TradePrice", 0.0) or 0.0)
+                except ValueError:
+                    price = 0.0
+                    
+                msg_code = row.get("MessageCode", "")
+                trade_time = row.get("TradeTime", "")
+                
+                # 1. Update overall statistics
+                total_volume += volume
+                total_trades += 1
+                total_price_volume += price * volume
+                total_price_sum += price
+                
+                # 2. Update product distribution
+                if symbol not in product_stats:
+                    product_stats[symbol] = {"TradeVolume": 0, "TradeCount": 0}
+                product_stats[symbol]["TradeVolume"] += volume
+                product_stats[symbol]["TradeCount"] += 1
+                
+                # 3. Update hourly trend
+                # TradeTime can be formatted as HHMMSS or HH:MM:SS
+                hour = trade_time.replace(":", "")[:2].zfill(2)
+                if hour.isdigit() and int(hour) < 24:
+                    hourly_stats[hour]["volume"] += volume
+                    hourly_stats[hour]["count"] += 1
+                    hourly_stats[hour]["price_sum"] += price
+                    
+                # 4. Update message distribution
+                if msg_code:
+                    message_stats[msg_code] = message_stats.get(msg_code, 0) + 1
+            
+            # Close stream to release memory
+            stream.close()
+            
+        if total_trades == 0:
             return None
             
-        return pd.concat(dataframes, ignore_index=True)
+        # Format outputs
+        avg_price = total_price_volume / total_volume if total_volume > 0 else (total_price_sum / total_trades)
+        
+        # Format product_distribution
+        prod_dist = []
+        for sym, stats in product_stats.items():
+            prod_dist.append({
+                "Symbol": sym,
+                "TradeVolume": stats["TradeVolume"],
+                "TradeCount": stats["TradeCount"]
+            })
+        prod_dist = sorted(prod_dist, key=lambda x: x["TradeVolume"], reverse=True)
+        
+        # Format hourly_trend
+        hourly_trend = []
+        for hr, stats in sorted(hourly_stats.items()):
+            hourly_trend.append({
+                "Hour": hr,
+                "HourlyVolume": stats["volume"],
+                "HourlyTradeCount": stats["count"],
+                "AvgPrice": round(stats["price_sum"] / stats["count"], 4) if stats["count"] > 0 else 0.0
+            })
+            
+        # Format message_distribution
+        msg_dist = []
+        for msg, count in message_stats.items():
+            msg_dist.append({
+                "MessageCode": msg,
+                "Count": count
+            })
+            
+        return {
+            "summary": {
+                "total_volume": total_volume,
+                "total_trades": total_trades,
+                "avg_price": round(avg_price, 4)
+            },
+            "product_distribution": prod_dist,
+            "hourly_trend": hourly_trend,
+            "message_distribution": msg_dist
+        }
+        
     except Exception as e:
-        logger.error(f"Error fetching data from S3 for date {date_str}: {e}")
+        logger.error(f"Error streaming data from S3 for date {date_str}: {e}")
         return None
-
-def compute_daily_aggregates(df: pd.DataFrame) -> Dict[str, Any]:
-    """Computes necessary metrics and time series aggregations for ECharts visualization"""
-    # Standardize TradeVolume and TradePrice types
-    df["TradeVolume"] = pd.to_numeric(df["TradeVolume"], errors="coerce").fillna(0).astype(int)
-    df["TradePrice"] = pd.to_numeric(df["TradePrice"], errors="coerce").fillna(0.0)
-    
-    # 1. Overall Summary Metrics
-    total_volume = int(df["TradeVolume"].sum())
-    total_trades = int(df.shape[0])
-    avg_price = float((df["TradePrice"] * df["TradeVolume"]).sum() / total_volume) if total_volume > 0 else float(df["TradePrice"].mean())
-    
-    # 2. Product Volume Distribution (Bar/Pie Chart data)
-    prod_volume = df.groupby("Symbol")["TradeVolume"].sum().reset_index()
-    prod_trades = df.groupby("Symbol").size().reset_index(name="TradeCount")
-    prod_merged = pd.merge(prod_volume, prod_trades, on="Symbol")
-    prod_dist = prod_merged.sort_values(by="TradeVolume", ascending=False).to_dict(orient="records")
-    
-    # 3. Hourly Trend (Line/Bar Chart data)
-    # Parse hour from TradeTime (TradeTime is string like '143210' or '14:32:10')
-    df["Hour"] = df["TradeTime"].astype(str).str.replace(":", "").str[:2]
-    # Ensure hour format is HH (padded with zero)
-    df["Hour"] = df["Hour"].str.zfill(2)
-    # Exclude invalid hours
-    df = df[df["Hour"].str.isdigit() & (df["Hour"].astype(int) < 24)]
-    
-    hourly_grp = df.groupby("Hour").agg(
-        HourlyVolume=("TradeVolume", "sum"),
-        HourlyTradeCount=("TradeVolume", "size"),
-        AvgPrice=("TradePrice", "mean")
-    ).reset_index()
-    
-    # Fill in missing hours to ensure complete 24h timeline
-    all_hours = pd.DataFrame({"Hour": [str(h).zfill(2) for h in range(24)]})
-    hourly_merged = pd.merge(all_hours, hourly_grp, on="Hour", how="left").fillna(0)
-    
-    hourly_trend = hourly_merged.to_dict(orient="records")
-    
-    # 4. Message Type Distribution
-    msg_dist = df.groupby("MessageCode").size().reset_index(name="Count").to_dict(orient="records")
-    
-    return {
-        "summary": {
-            "total_volume": total_volume,
-            "total_trades": total_trades,
-            "avg_price": round(avg_price, 4)
-        },
-        "product_distribution": prod_dist,
-        "hourly_trend": hourly_trend,
-        "message_distribution": msg_dist
-    }
 
 @app.get("/api/dates", response_model=List[str])
 def get_dates():
@@ -198,19 +242,16 @@ def get_dashboard_data(date: str = Query(..., description="Date partition format
         except Exception as e:
             logger.error(f"Error reading cache file {cache_file}: {e}")
             
-    # Cache miss - fetch from S3 and process
-    logger.info(f"Cache miss for date {date}. Fetching CSV files from S3...")
-    df = get_merged_s3_data(date)
+    # Cache miss - fetch from S3 using memory efficient streaming
+    logger.info(f"Cache miss for date {date}. Streaming CSV files from S3...")
+    aggregates = fetch_and_aggregate_s3_data(date)
     
-    if df is None or df.empty:
+    if aggregates is None:
         raise HTTPException(
             status_code=404, 
             detail=f"No data found for date {date} in S3 bucket {BUCKET_NAME}."
         )
         
-    logger.info(f"Successfully loaded {df.shape[0]} rows for {date}. Generating aggregates...")
-    aggregates = compute_daily_aggregates(df)
-    
     # Save to cache
     try:
         with open(cache_file, "w", encoding="utf-8") as f:
