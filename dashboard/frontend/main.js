@@ -3,9 +3,8 @@ let chartHourlyTrend = null;
 let chartProductVolume = null;
 let chartMessageDist = null;
 
-const API_BASE_URL = "http://localhost:8000";
+const API_BASE_URL = window.location.origin;
 
-// DOM Elements
 const dateSelect = document.getElementById("date-select");
 const btnRefresh = document.getElementById("btn-refresh");
 const btnClearCache = document.getElementById("btn-clear-cache");

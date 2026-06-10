@@ -121,12 +121,7 @@ Truy vấn trực tiếp trên các bảng Delta Lake lưu trong MinIO bằng c�
 python src/analytics/queries.py
 ```
 
-### Bước 6: Khởi chạy Web Dashboard trực quan tương tác
-Mở giao diện biểu đồ trực quan hóa dữ liệu bằng Streamlit trên trình duyệt web:
-```powershell
-streamlit run src/analytics/dashboard.py
-```
-*Giao diện dashboard sẽ tự động mở tại địa chỉ `http://localhost:8501`.*
+
 
 ### Bước 7: Bảo trì Delta Lake Store (Maintenance)
 Chạy tác vụ bảo trì định kỳ để nén file nhỏ (**OPTIMIZE**) và dọn dẹp các lịch sử giao dịch thừa vượt quá 7 ngày (**VACUUM**):
