@@ -68,6 +68,28 @@ except Exception as e:
     logger.error(f"✗ Lỗi khởi tạo S3 client: {e}")
     raise e
 
+
+def delete_s3_folder(bucket, prefix):
+    try:
+        # Sử dụng paginator để liệt kê tất cả các tệp có tiền tố (prefix) trên S3
+        paginator = s3_client.get_paginator('list_objects_v2')
+        pages = paginator.paginate(Bucket=bucket, Prefix=prefix)
+        delete_us = []
+        for page in pages:
+            if 'Contents' in page:
+                for obj in page['Contents']:
+                    delete_us.append({'Key': obj['Key']})
+        # Xóa các tệp theo batch tối đa 1000 đối tượng
+        if delete_us:
+            for i in range(0, len(delete_us), 1000):
+                s3_client.delete_objects(
+                    Bucket=bucket,
+                    Delete={'Objects': delete_us[i:i+1000]}
+                )
+            logger.info(f"✓ Đã dọn dẹp {len(delete_us)} tệp cũ trên S3 tại: s3://{bucket}/{prefix}")
+    except Exception as e:
+        logger.warning(f"Không thể dọn dẹp thư mục cũ trên S3 s3://{bucket}/{prefix}: {e}")
+
 # 2. Tải lần lượt các file TXT vào thư mục tạm cục bộ
 for d in dates_to_process:
     d_norm = d.replace("-", "")
@@ -142,35 +164,43 @@ try:
     local_export_dir = os.path.join(volume_path, f"export_csv_tc_{int(time.time())}")
     logger.info(f"Đang xuất dữ liệu sạch ra thư mục tạm local: {local_export_dir}...")
     try:
-        # Coalesce(1) để tạo 1 file duy nhất cho mỗi phân vùng ngày
-        df_cleaned.coalesce(1).write \
+        # Xuất dữ liệu song song không dùng coalesce(1) để tối ưu hiệu năng
+        df_cleaned.write \
             .format("csv") \
             .option("header", "true") \
             .mode("overwrite") \
             .partitionBy("TradeDateParsed") \
             .save(local_export_dir)
             
-        logger.info("Đang upload dữ liệu CSV lên S3 từ thư mục tạm...")
+        logger.info("Đang gom danh sách các file CSV được xuất theo phân vùng...")
         s3_prefix = "processed/trade_cancellations"
         
-        # Duyệt qua các thư mục phân vùng và upload lên S3
+        # Gom các file CSV theo từng phân vùng ngày thô để xử lý
+        partition_files = {}
         for root, dirs, files in os.walk(local_export_dir):
             for file in files:
                 if file.endswith(".csv") and not file.startswith("."):
                     local_file_path = os.path.join(root, file)
-                    # Lấy đường dẫn tương đối (ví dụ: TradeDateParsed=2026-04-27/part-00000-xxx.csv)
-                    rel_path = os.path.relpath(local_file_path, local_export_dir)
-                    rel_path = rel_path.replace("\\", "/")
-                    
-                    # Trích xuất phần tên phân vùng (TradeDateParsed=YYYY-MM-DD)
+                    rel_path = os.path.relpath(local_file_path, local_export_dir).replace("\\", "/")
                     partition_dir = os.path.dirname(rel_path)
                     
-                    # Đặt tên file cố định là data.csv trên S3 để tránh trùng lặp
-                    s3_key = f"{s3_prefix}/{partition_dir}/data.csv"
-                    
-                    logger.info(f"Tải lên S3: {local_file_path} -> s3://{bucket_name}/{s3_key}")
-                    s3_client.upload_file(local_file_path, bucket_name, s3_key)
-                    
+                    if partition_dir not in partition_files:
+                        partition_files[partition_dir] = []
+                    partition_files[partition_dir].append(local_file_path)
+        
+        # Tải lên S3 song song theo từng phân vùng ngày
+        for partition_dir, file_paths in partition_files.items():
+            s3_partition_prefix = f"{s3_prefix}/{partition_dir}/"
+            
+            # A. Xóa sạch các tệp cũ trong phân vùng này trên S3 trước khi upload tệp mới
+            delete_s3_folder(bucket_name, s3_partition_prefix)
+            
+            # B. Upload các file part mới lên S3
+            for idx, local_file_path in enumerate(sorted(file_paths)):
+                s3_key = f"{s3_partition_prefix}part_{idx}.csv"
+                logger.info(f"Tải lên S3: {local_file_path} -> s3://{bucket_name}/{s3_key}")
+                s3_client.upload_file(local_file_path, bucket_name, s3_key)
+                
         logger.info("✓ Hoàn thành xuất dữ liệu sạch lên S3 thành công!")
     except Exception as s3_err:
         logger.warning(f"⚠ Lỗi khi xuất dữ liệu lên S3: {s3_err}")

@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="vi" class="h-full bg-slate-50 text-slate-900">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SGX Derivatives Market Analytics</title>
+    
+    <!-- Google Fonts: Inter & Outfit -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Apache ECharts CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+    
+    <!-- Lucide Icons for premium visual cues -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <!-- Tailwind Custom Configuration for Bright/Steel Blue Palette -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        outfit: ['Outfit', 'sans-serif'],
+                    },
+                    colors: {
+                        steel: {
+                            50: '#f8fafc',
+                            100: '#f1f5f9',
+                            200: '#e2e8f0',
+                            300: '#cbd5e1',
+                            400: '#94a6b8',
+                            500: '#64748b',
+                            600: '#475569',
+                            700: '#334155',
+                            800: '#1e293b',
+                            900: '#0f172a',
+                            950: '#020617',
+                        },
+                        brand: {
+                            50: '#f0f9ff',
+                            100: '#e0f2fe',
+                            200: '#bae6fd',
+                            300: '#7dd3fc',
+                            400: '#38bdf8',
+                            500: '#0ea5e9',
+                            600: '#0284c7',
+                            700: '#0369a1',
+                            800: '#075985',
+                            900: '#0c4a6e',
+                        },
+                        cyber: {
+                            cyan: '#06b6d4',
+                            emerald: '#10b981',
+                            rose: '#f43f5e',
+                            amber: '#f59e0b',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background: radial-gradient(circle at 50% 0%, #f8fafc 0%, #e2e8f0 100%);
+        }
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(8px);
+            border: 1px solid rgba(148, 163, 184, 0.2);
+            box-shadow: 0 4px 20px 0 rgba(148, 163, 184, 0.08);
+        }
+        .glass-panel:hover {
+            border-color: rgba(2, 132, 199, 0.35);
+            box-shadow: 0 8px 30px 0 rgba(2, 132, 199, 0.12);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .glow-text {
+            text-shadow: 0 0 8px rgba(2, 132, 199, 0.15);
+        }
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(226, 232, 240, 0.5);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(2, 132, 199, 0.25);
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(2, 132, 199, 0.45);
+        }
+    </style>
+</head>
+<body class="h-full flex flex-col overflow-hidden">
+
+    <!-- Header Section -->
+    <header class="w-full flex-none px-6 py-4 border-b border-slate-200/80 bg-white/80 backdrop-blur-md z-10 flex items-center justify-between">
+        <div class="flex items-center space-x-3">
+            <div class="h-10 w-10 rounded-xl bg-gradient-to-tr from-brand-600 to-cyber-cyan flex items-center justify-center shadow-lg shadow-brand-500/20">
+                <i data-lucide="trending-up" class="text-white h-5 w-5"></i>
+            </div>
+            <div>
+                <h1 class="text-xl font-outfit font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-slate-900 via-brand-700 to-cyber-cyan">
+                    SGX DERIVATIVES MARKET ANALYTICS
+                </h1>
+                <p class="text-xs text-slate-500 font-medium">S3 Data Lakehouse Integration • Processing Pipeline Engine</p>
+            </div>
+        </div>
+        
+        <!-- Controls: Date selector -->
+        <div class="flex items-center space-x-3">
+            <div class="flex items-center space-x-2 bg-slate-100 border border-slate-200 rounded-lg px-3 py-1.5 shadow-sm">
+                <i data-lucide="calendar" class="text-brand-600 h-4 w-4"></i>
+                <label for="date-select" class="text-xs text-slate-600 font-bold uppercase tracking-wider">Chọn ngày:</label>
+                <select id="date-select" class="bg-transparent text-sm font-bold text-slate-800 focus:outline-none cursor-pointer pr-1">
+                    <option value="" disabled selected>Đang tải ngày...</option>
+                </select>
+            </div>
+            
+            <button id="btn-refresh" class="flex items-center justify-center h-9 w-9 rounded-lg bg-white border border-slate-200 hover:bg-brand-600 hover:border-brand-600 hover:text-white text-slate-600 transition-all duration-200 shadow-sm" title="Làm mới dữ liệu từ S3">
+                <i data-lucide="refresh-cw" class="h-4 w-4"></i>
+            </button>
+            <button id="btn-clear-cache" class="flex items-center justify-center h-9 w-9 rounded-lg bg-white border border-slate-200 hover:bg-cyber-rose hover:border-cyber-rose hover:text-white text-slate-600 transition-all duration-200 shadow-sm" title="Xóa cache dữ liệu này">
+                <i data-lucide="trash-2" class="h-4 w-4"></i>
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Content Grid -->
+    <main class="flex-1 overflow-y-auto p-6 space-y-6">
+        
+        <!-- Status Overlay for loading / errors -->
+        <div id="loading-overlay" class="fixed inset-0 bg-slate-50/80 backdrop-blur-sm z-50 flex flex-col items-center justify-center transition-all duration-300 hidden">
+            <div class="h-16 w-16 rounded-2xl bg-gradient-to-tr from-brand-600 to-cyber-cyan p-0.5 animate-spin">
+                <div class="h-full w-full bg-white rounded-2xl flex items-center justify-center">
+                    <i data-lucide="loader-2" class="h-8 w-8 text-brand-600 animate-spin"></i>
+                </div>
+            </div>
+            <p id="loading-text" class="mt-4 text-sm font-bold text-slate-700 tracking-wide">Đang đọc & xử lý file CSV từ AWS S3...</p>
+        </div>
+
+        <div id="error-alert" class="hidden flex items-center p-4 rounded-xl border border-cyber-rose/30 bg-cyber-rose/10 text-cyber-rose">
+            <i data-lucide="alert-triangle" class="h-5 w-5 mr-3"></i>
+            <span id="error-message" class="text-sm font-medium">Không thể kết nối đến máy chủ Backend API.</span>
+        </div>
+
+        <!-- 1. Key Metrics row -->
+        <section class="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <!-- Card 1: Volume -->
+            <div class="glass-panel rounded-2xl p-5 flex items-center justify-between transition-all duration-300 group">
+                <div class="space-y-1">
+                    <p class="text-xs font-bold text-slate-500 uppercase tracking-widest">Tổng Khối Lượng Khớp</p>
+                    <h3 id="metric-volume" class="text-3xl font-outfit font-extrabold text-slate-900 tracking-tight glow-text">-</h3>
+                    <p class="text-xs text-slate-500 flex items-center">
+                        <i data-lucide="box" class="h-3 w-3 mr-1 text-brand-600"></i> Số hợp đồng chuyển nhượng
+                    </p>
+                </div>
+                <div class="h-12 w-12 rounded-xl bg-brand-50 border border-brand-100 flex items-center justify-center text-brand-600 group-hover:bg-brand-600 group-hover:text-white transition-all duration-300">
+                    <i data-lucide="activity" class="h-6 w-6"></i>
+                </div>
+            </div>
+
+            <!-- Card 2: Trades Count -->
+            <div class="glass-panel rounded-2xl p-5 flex items-center justify-between transition-all duration-300 group">
+                <div class="space-y-1">
+                    <p class="text-xs font-bold text-slate-500 uppercase tracking-widest">Số Lượng Giao Dịch (Trades)</p>
+                    <h3 id="metric-trades" class="text-3xl font-outfit font-extrabold text-cyber-cyan tracking-tight glow-text">-</h3>
+                    <p class="text-xs text-slate-500 flex items-center">
+                        <i data-lucide="database" class="h-3 w-3 mr-1 text-cyber-cyan"></i> Số bản ghi khớp lệnh sạch
+                    </p>
+                </div>
+                <div class="h-12 w-12 rounded-xl bg-cyan-50 border border-cyan-100 flex items-center justify-center text-cyber-cyan group-hover:bg-cyber-cyan group-hover:text-white transition-all duration-300">
+                    <i data-lucide="copy" class="h-6 w-6"></i>
+                </div>
+            </div>
+
+            <!-- Card 3: Avg Price -->
+            <div class="glass-panel rounded-2xl p-5 flex items-center justify-between transition-all duration-300 group">
+                <div class="space-y-1">
+                    <p class="text-xs font-bold text-slate-500 uppercase tracking-widest">Giá Trị Trung Bình Khớp</p>
+                    <h3 id="metric-price" class="text-3xl font-outfit font-extrabold text-cyber-emerald tracking-tight glow-text">-</h3>
+                    <p class="text-xs text-slate-500 flex items-center">
+                        <i data-lucide="dollar-sign" class="h-3 w-3 mr-1 text-cyber-emerald"></i> Giá trị bình quân trọng số
+                    </p>
+                </div>
+                <div class="h-12 w-12 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-cyber-emerald group-hover:bg-cyber-emerald group-hover:text-white transition-all duration-300">
+                    <i data-lucide="dollar-sign" class="h-6 w-6"></i>
+                </div>
+            </div>
+        </section>
+
+        <!-- 2. Main Trend Graph -->
+        <section class="glass-panel rounded-2xl p-5">
+            <div class="flex items-center justify-between mb-4">
+                <div>
+                    <h4 class="text-md font-outfit font-bold tracking-wide text-slate-900">XU HƯỚNG GIAO DỊCH TRONG NGÀY (HOURLY TREND)</h4>
+                    <p class="text-xs text-slate-500">Khối lượng khớp lệnh & mức giá trung bình phân bổ theo giờ</p>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-brand-100 text-brand-700 border border-brand-200">
+                        Bar: Volume
+                    </span>
+                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-cyber-cyan/10 text-brand-700 border border-brand-200">
+                        Line: Average Price
+                    </span>
+                </div>
+            </div>
+            <!-- EChart container -->
+            <div id="chart-hourly-trend" class="w-full h-80"></div>
+        </section>
+
+        <!-- 3. Bottom Grid: Product Distribution & Message Code Composition -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <!-- Left Panel: Product Volume Dist -->
+            <section class="glass-panel rounded-2xl p-5">
+                <div class="mb-4">
+                    <h4 class="text-md font-outfit font-bold tracking-wide text-slate-900">PHÂN PHỐI KHỐI LƯỢNG THEO SẢN PHẨM (SYMBOLS)</h4>
+                    <p class="text-xs text-slate-500">Các mã phái sinh chiếm tỷ trọng volume khớp lệnh lớn nhất</p>
+                </div>
+                <div id="chart-product-volume" class="w-full h-72"></div>
+            </section>
+
+            <!-- Right Panel: Message Code Ring -->
+            <section class="glass-panel rounded-2xl p-5">
+                <div class="mb-4">
+                    <h4 class="text-md font-outfit font-bold tracking-wide text-slate-900">CƠ CẤU MÃ THÔNG ĐIỆP (MESSAGE CODES)</h4>
+                    <p class="text-xs text-slate-500">Tỷ trọng các thông điệp ghi nhận (Khớp lệnh, báo giá, hủy lệnh)</p>
+                </div>
+                <div id="chart-message-distribution" class="w-full h-72"></div>
+            </section>
+        </div>
+
+    </main>
+
+    <!-- Footer Status Bar -->
+    <footer class="w-full flex-none px-6 py-2 bg-white border-t border-slate-200 flex items-center justify-between text-xs text-slate-500 font-medium">
+        <div class="flex items-center space-x-2">
+            <span class="h-2 w-2 rounded-full bg-cyber-emerald animate-pulse"></span>
+            <span>API Server: http://localhost:8000</span>
+        </div>
+        <div>
+            <span>AWS S3 Bucket: <span class="text-brand-600 font-semibold">sgx-derivatives-daily-data-079</span></span>
+        </div>
+        <div>
+            <span>Powered by Apache ECharts & FastAPI</span>
+        </div>
+    </footer>
+
+    <!-- App JavaScript -->
+    <script src="/static/main.js"></script>
+    <script>
+        // Initialize Lucide icons
+        lucide.createIcons();
+    </script>
+</body>
+</html>

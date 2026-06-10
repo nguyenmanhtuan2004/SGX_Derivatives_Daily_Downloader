@@ -62,10 +62,10 @@ class DatabricksIDResolver:
     def _check_id_date(self, test_id):
         """Gửi request HEAD để lấy ngày thực tế của ID đó từ header Content-Disposition"""
         url = f"{self.base_url}/{test_id}/WEBPXTICK_DT.zip"
-        for attempt in range(3):
+        for attempt in range(2):  # Giảm số lần thử xuống 2 để phản hồi lỗi mạng nhanh hơn
             try:
-                # Dùng HEAD để không tải toàn bộ file ZIP về, chỉ lấy Header -> Tối ưu hóa băng thông và tránh treo lâu!
-                response = requests.head(url, headers=self.headers, allow_redirects=True, timeout=10)
+                # Giảm timeout xuống 4 giây để tránh bị treo lâu khi sàn SGX chặn/nghẽn mạng
+                response = requests.head(url, headers=self.headers, allow_redirects=True, timeout=4)
                 if response.status_code == 404:
                     return None # ID này không tồn tại file (có thể là ngày nghỉ/lễ)
                 
@@ -78,10 +78,10 @@ class DatabricksIDResolver:
             except requests.RequestException as e:
                 logger.warning(f"Lỗi kết nối mạng khi kiểm tra ID {test_id} (lần {attempt+1}): {e}")
                 self.has_network_error = True
-                time.sleep(1.5)
+                return None  # Trả về None lập tức để kích hoạt vòng lặp dừng
             except Exception as e:
                 logger.warning(f"Lỗi không xác định khi kiểm tra ID {test_id}: {e}")
-                time.sleep(1.5)
+                return None
         return None
 
     def resolve(self, target_date_str):
@@ -107,18 +107,24 @@ class DatabricksIDResolver:
             visited.add(current_id)
             
             actual_date = self._check_id_date(current_id)
+            if self.has_network_error:
+                logger.warning("Phát hiện lỗi mạng trong lúc dò tìm ID. Ngắt tìm kiếm để dùng Fallback ngay lập tức.")
+                break
+                
             if not actual_date:
                 # Nếu đụng ngày 404 hoặc lỗi mạng, thử các ID lân cận
                 logger.info(f"ID {current_id} không xác định ngày thực tế, đang dò các ID lân cận...")
                 found = False
                 for offset in [1, -1, 2, -2]:
                     actual_date = self._check_id_date(current_id + offset)
+                    if self.has_network_error:
+                        break
                     if actual_date:
                         current_id += offset
                         found = True
                         break
-                if not found:
-                    break # Không tìm thấy ID hợp lệ xung quanh
+                if self.has_network_error or not found:
+                    break # Lỗi mạng hoặc không tìm thấy ID hợp lệ xung quanh
             
             logger.info(f"ID {current_id} thực tế thuộc ngày: {actual_date}")
             
@@ -167,6 +173,19 @@ class DatabricksSGXDownloader:
             # Fallback dùng IAM role / Default credentials của Cluster Instance Profile
             self.s3_client = boto3.client('s3')
             logger.info("Khởi tạo S3 Client sử dụng Default Cluster Credentials (IAM Instance Profile).")
+
+    def check_raw_files_exist(self, target_date_str):
+        """Kiểm tra xem các tệp thô chính đã tồn tại trên S3 raw/ hay chưa"""
+        date_normalized = target_date_str.replace("-", "")
+        tick_key = f"raw/{date_normalized}/WEBPXTICK_DT_{date_normalized}.zip"
+        tc_key = f"raw/{date_normalized}/TC_{date_normalized}.txt"
+        try:
+            self.s3_client.head_object(Bucket=self.bucket_name, Key=tick_key)
+            self.s3_client.head_object(Bucket=self.bucket_name, Key=tc_key)
+            logger.info(f"✓ Phát hiện tệp thô cho ngày {target_date_str} đã tồn tại đầy đủ trên S3.")
+            return True
+        except Exception:
+            return False
 
     def download_and_ingest(self, resolved_id, target_date_str):
         date_normalized = target_date_str.replace("-", "")
@@ -225,13 +244,27 @@ spark.sql(f"""
 # DBTITLE 1,Chạy quy trình Ingestion
 import json
 
-resolver = DatabricksIDResolver()
+started_at = datetime.datetime.now()
 downloader = DatabricksSGXDownloader(bucket_name=bucket_name)
 
+# 1. Kiểm tra nếu file thô đã có trên S3 raw/ thì bỏ qua không download lại từ SGX
+if downloader.check_raw_files_exist(run_date_str):
+    print(f"✓ Bỏ qua tải từ SGX vì tệp thô ngày {run_date_str} đã tồn tại đầy đủ trên S3.")
+    ended_at = datetime.datetime.now()
+    results = [
+        {"filename": f"WEBPXTICK_DT_{run_date_str.replace('-', '')}.zip", "status": "success", "info": "Already exists on S3"},
+        {"filename": f"TC_{run_date_str.replace('-', '')}.txt", "status": "success", "info": "Already exists on S3"}
+    ]
+    spark.sql(f"""
+        INSERT INTO {catalog_name}.sgx_lakehouse.ingestion_runs 
+        VALUES ('{run_date_str}', 'success', CAST('{started_at}' AS TIMESTAMP), CAST('{ended_at}' AS TIMESTAMP), '{json.dumps(results)}')
+    """)
+    dbutils.notebook.exit("success")
+
+# 2. Nếu chưa có trên S3, tiến hành dò tìm ID trên SGX
+resolver = DatabricksIDResolver()
 resolved_id = resolver.resolve(run_date_str)
 print(f"Resolved ID trên SGX: {resolved_id}")
-
-started_at = datetime.datetime.now()
 
 # Nếu không tìm thấy ID do ngày lễ / ngày nghỉ, bỏ qua không báo lỗi
 if resolved_id is None:
@@ -244,7 +277,7 @@ if resolved_id is None:
     # Thoát notebook Databricks một cách sạch sẽ trả về trạng thái "skipped"
     dbutils.notebook.exit("skipped")
 
-# Cập nhật bắt đầu
+# Cập nhật bắt đầu chạy thật
 spark.sql(f"""
     INSERT INTO {catalog_name}.sgx_lakehouse.ingestion_runs 
     VALUES ('{run_date_str}', 'running', CAST('{started_at}' AS TIMESTAMP), NULL, NULL)

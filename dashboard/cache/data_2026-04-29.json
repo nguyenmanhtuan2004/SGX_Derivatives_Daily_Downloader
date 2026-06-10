@@ -1,0 +1,339 @@
+{
+  "summary": {
+    "total_volume": 6199877,
+    "total_trades": 591800,
+    "avg_price": 6932.5165
+  },
+  "product_distribution": [
+    {
+      "Symbol": "UC",
+      "TradeVolume": 1735757,
+      "TradeCount": 193549
+    },
+    {
+      "Symbol": "MTWN",
+      "TradeVolume": 685005,
+      "TradeCount": 20683
+    },
+    {
+      "Symbol": "MUC",
+      "TradeVolume": 644007,
+      "TradeCount": 29273
+    },
+    {
+      "Symbol": "KU",
+      "TradeVolume": 628582,
+      "TradeCount": 20215
+    },
+    {
+      "Symbol": "IU",
+      "TradeVolume": 615714,
+      "TradeCount": 9574
+    },
+    {
+      "Symbol": "CN",
+      "TradeVolume": 341587,
+      "TradeCount": 41833
+    },
+    {
+      "Symbol": "TWN",
+      "TradeVolume": 190639,
+      "TradeCount": 69016
+    },
+    {
+      "Symbol": "NU",
+      "TradeVolume": 169785,
+      "TradeCount": 19946
+    },
+    {
+      "Symbol": "NK",
+      "TradeVolume": 158236,
+      "TradeCount": 57058
+    },
+    {
+      "Symbol": "BTP",
+      "TradeVolume": 152804,
+      "TradeCount": 21535
+    },
+    {
+      "Symbol": "ETP",
+      "TradeVolume": 120128,
+      "TradeCount": 16742
+    },
+    {
+      "Symbol": "UY",
+      "TradeVolume": 117083,
+      "TradeCount": 12162
+    },
+    {
+      "Symbol": "FEF",
+      "TradeVolume": 112627,
+      "TradeCount": 1390
+    },
+    {
+      "Symbol": "SGP",
+      "TradeVolume": 89809,
+      "TradeCount": 21010
+    },
+    {
+      "Symbol": "FCH",
+      "TradeVolume": 89369,
+      "TradeCount": 14228
+    },
+    {
+      "Symbol": "BRL",
+      "TradeVolume": 72011,
+      "TradeCount": 9903
+    },
+    {
+      "Symbol": "KRW",
+      "TradeVolume": 51570,
+      "TradeCount": 3158
+    },
+    {
+      "Symbol": "EJP",
+      "TradeVolume": 42762,
+      "TradeCount": 4316
+    },
+    {
+      "Symbol": "TU",
+      "TradeVolume": 32659,
+      "TradeCount": 4342
+    },
+    {
+      "Symbol": "NS",
+      "TradeVolume": 31633,
+      "TradeCount": 10551
+    },
+    {
+      "Symbol": "JB",
+      "TradeVolume": 28984,
+      "TradeCount": 2033
+    },
+    {
+      "Symbol": "SND",
+      "TradeVolume": 21922,
+      "TradeCount": 3685
+    },
+    {
+      "Symbol": "US",
+      "TradeVolume": 17360,
+      "TradeCount": 2374
+    },
+    {
+      "Symbol": "HKC",
+      "TradeVolume": 16440,
+      "TradeCount": 747
+    },
+    {
+      "Symbol": "TD",
+      "TradeVolume": 13013,
+      "TradeCount": 397
+    },
+    {
+      "Symbol": "HKU",
+      "TradeVolume": 7300,
+      "TradeCount": 246
+    },
+    {
+      "Symbol": "TWD",
+      "TradeVolume": 5849,
+      "TradeCount": 598
+    },
+    {
+      "Symbol": "INX",
+      "TradeVolume": 5120,
+      "TradeCount": 1047
+    },
+    {
+      "Symbol": "MTWD",
+      "TradeVolume": 1500,
+      "TradeCount": 32
+    },
+    {
+      "Symbol": "FID",
+      "TradeVolume": 309,
+      "TradeCount": 89
+    },
+    {
+      "Symbol": "FVN",
+      "TradeVolume": 291,
+      "TradeCount": 61
+    },
+    {
+      "Symbol": "TONA",
+      "TradeVolume": 20,
+      "TradeCount": 1
+    },
+    {
+      "Symbol": "ST",
+      "TradeVolume": 2,
+      "TradeCount": 4
+    },
+    {
+      "Symbol": "CY",
+      "TradeVolume": 0,
+      "TradeCount": 2
+    }
+  ],
+  "hourly_trend": [
+    {
+      "Hour": "00",
+      "HourlyVolume": 1424,
+      "HourlyTradeCount": 121,
+      "AvgPrice": 9652.525137190081
+    },
+    {
+      "Hour": "01",
+      "HourlyVolume": 588,
+      "HourlyTradeCount": 70,
+      "AvgPrice": 15277.86178857143
+    },
+    {
+      "Hour": "02",
+      "HourlyVolume": 660,
+      "HourlyTradeCount": 55,
+      "AvgPrice": 14008.073967272727
+    },
+    {
+      "Hour": "03",
+      "HourlyVolume": 473,
+      "HourlyTradeCount": 49,
+      "AvgPrice": 16174.47359387755
+    },
+    {
+      "Hour": "04",
+      "HourlyVolume": 639,
+      "HourlyTradeCount": 61,
+      "AvgPrice": 14133.93396885246
+    },
+    {
+      "Hour": "05",
+      "HourlyVolume": 1421,
+      "HourlyTradeCount": 111,
+      "AvgPrice": 9724.243548648648
+    },
+    {
+      "Hour": "06",
+      "HourlyVolume": 700,
+      "HourlyTradeCount": 47,
+      "AvgPrice": 16028.428929787233
+    },
+    {
+      "Hour": "07",
+      "HourlyVolume": 1057,
+      "HourlyTradeCount": 81,
+      "AvgPrice": 9932.443539506172
+    },
+    {
+      "Hour": "08",
+      "HourlyVolume": 796,
+      "HourlyTradeCount": 62,
+      "AvgPrice": 10279.101703225806
+    },
+    {
+      "Hour": "09",
+      "HourlyVolume": 1125,
+      "HourlyTradeCount": 88,
+      "AvgPrice": 8209.542488636363
+    },
+    {
+      "Hour": "10",
+      "HourlyVolume": 391672,
+      "HourlyTradeCount": 31897,
+      "AvgPrice": 12421.646808499232
+    },
+    {
+      "Hour": "11",
+      "HourlyVolume": 348638,
+      "HourlyTradeCount": 27997,
+      "AvgPrice": 13124.149201271566
+    },
+    {
+      "Hour": "12",
+      "HourlyVolume": 313589,
+      "HourlyTradeCount": 27122,
+      "AvgPrice": 12940.129101673918
+    },
+    {
+      "Hour": "13",
+      "HourlyVolume": 306625,
+      "HourlyTradeCount": 27355,
+      "AvgPrice": 12947.875149793455
+    },
+    {
+      "Hour": "14",
+      "HourlyVolume": 284419,
+      "HourlyTradeCount": 26187,
+      "AvgPrice": 12338.114660205447
+    },
+    {
+      "Hour": "15",
+      "HourlyVolume": 294462,
+      "HourlyTradeCount": 26023,
+      "AvgPrice": 11574.021534623218
+    },
+    {
+      "Hour": "16",
+      "HourlyVolume": 36973,
+      "HourlyTradeCount": 3005,
+      "AvgPrice": 11717.489525124793
+    },
+    {
+      "Hour": "17",
+      "HourlyVolume": 41296,
+      "HourlyTradeCount": 3159,
+      "AvgPrice": 10554.394665178854
+    },
+    {
+      "Hour": "18",
+      "HourlyVolume": 34356,
+      "HourlyTradeCount": 3114,
+      "AvgPrice": 11491.815410179832
+    },
+    {
+      "Hour": "19",
+      "HourlyVolume": 36923,
+      "HourlyTradeCount": 3208,
+      "AvgPrice": 11513.538464713218
+    },
+    {
+      "Hour": "20",
+      "HourlyVolume": 260122,
+      "HourlyTradeCount": 25146,
+      "AvgPrice": 12944.9886548119
+    },
+    {
+      "Hour": "21",
+      "HourlyVolume": 224491,
+      "HourlyTradeCount": 22950,
+      "AvgPrice": 13032.81940388671
+    },
+    {
+      "Hour": "22",
+      "HourlyVolume": 303296,
+      "HourlyTradeCount": 29706,
+      "AvgPrice": 12500.962010728472
+    },
+    {
+      "Hour": "23",
+      "HourlyVolume": 218702,
+      "HourlyTradeCount": 22028,
+      "AvgPrice": 13834.90563807427
+    }
+  ],
+  "message_distribution": [
+    {
+      "MessageCode": "A",
+      "Count": 128081
+    },
+    {
+      "MessageCode": "B",
+      "Count": 142295
+    },
+    {
+      "MessageCode": "T",
+      "Count": 9266
+    }
+  ]
+}
