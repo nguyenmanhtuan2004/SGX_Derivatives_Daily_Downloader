@@ -35,3 +35,6 @@ env/
 # Ignore all markdown files except README.md
 *.md
 !README.md
+
+# Dashboard temporary local cache
+dashboard/cache/
