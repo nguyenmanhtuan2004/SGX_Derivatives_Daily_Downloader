@@ -47,7 +47,22 @@ graph TD
     end
 ```
 
+
+### ⏰ Sơ đồ điều phối công việc (Airflow Orchestration DAG)
+
+Apache Airflow chịu trách nhiệm lập lịch và điều phối chuỗi tác vụ hàng ngày theo cấu trúc phụ thuộc (DAG) như sau:
+
+```mermaid
+graph TD
+    A[⏰ Kích hoạt: 22:00 Thứ 2 - Thứ 6] --> B[Task 1: 01_Ingestion.py]
+    B -->|Tải thô thành công| C[Task 2: 02_ETL_Tick_Data.py]
+    B -->|Tải thô thành công| D[Task 3: 02_ETL_Trade_Cancel.py]
+    C --> E[Task 4: 04_Maintenance.py]
+    D --> E
+```
+
 ---
+
 
 ## 📁 2. Cấu trúc thư mục (Project Structure)
 
