@@ -17,18 +17,37 @@ logger = logging.getLogger("local_etl_tick")
 
 def init_spark_session(endpoint, access_key, secret_key):
     logger.info("Đang khởi tạo Spark Session kết nối với MinIO...")
-    # Tự động lấy Spark version để chọn delta-spark package tương thích
+    # Tự động dò tìm Scala version (2.12 hoặc 2.13) từ thư mục jars của pyspark
+    scala_ver = "2.12"
+    try:
+        import pyspark
+        pyspark_dir = os.path.dirname(pyspark.__file__)
+        jars_dir = os.path.join(pyspark_dir, "jars")
+        if os.path.exists(jars_dir):
+            for f in os.listdir(jars_dir):
+                if "_2.13" in f:
+                    scala_ver = "2.13"
+                    break
+    except Exception:
+        pass
+
     try:
         import pyspark
         spark_ver = pyspark.__version__
     except Exception:
         spark_ver = "3.4.0"
         
-    delta_pkg = "io.delta:delta-spark_2.13:3.0.0" if spark_ver.startswith("3.5") else "io.delta:delta-spark_2.13:2.4.0"
-    if spark_ver.startswith("4.0"):
-        delta_pkg = "io.delta:delta-spark_2.13:4.0.0"
+    # Chọn package Delta tương thích (Delta 2.4.0 có tên là delta-core, Delta 3.0.0+ có tên là delta-spark)
+    if spark_ver.startswith("3.4"):
+        delta_pkg = f"io.delta:delta-core_{scala_ver}:2.4.0"
+    elif spark_ver.startswith("3.5"):
+        delta_pkg = f"io.delta:delta-spark_{scala_ver}:3.0.0"
+    elif spark_ver.startswith("4.0"):
+        delta_pkg = f"io.delta:delta-spark_{scala_ver}:4.0.0"
+    else:
+        delta_pkg = f"io.delta:delta-core_{scala_ver}:2.4.0"
         
-    logger.info(f"Sử dụng Spark Version: {spark_ver}, Delta Package: {delta_pkg}")
+    logger.info(f"Sử dụng Spark Version: {spark_ver}, Scala: {scala_ver}, Delta Package: {delta_pkg}")
     
     return SparkSession.builder \
         .appName("SGX_Tick_Data_ETL_Local") \
