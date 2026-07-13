@@ -1,1 +1,0 @@
-# Initialise ingestion package

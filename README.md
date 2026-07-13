@@ -1,25 +1,26 @@
-# SGX Derivatives Cloud Lakehouse Pipeline (Databricks Edition)
+# SGX Derivatives Local Lakehouse Pipeline (Docker & Airflow Edition)
 
-Một hệ thống **Cloud Data Lakehouse Pipeline** hoàn chỉnh, tự động hóa toàn diện và hiệu năng cao, được thiết kế chuyên biệt để chạy trên nền tảng **Databricks Cloud Engine** nhằm nạp (Ingestion), xử lý (Processing), lưu trữ (Lakehouse Storage) và phân tích (Analytics) dữ liệu phái sinh lịch sử hàng ngày từ Sở giao dịch Chứng khoán Singapore (**SGX - Singapore Exchange**).
+Một hệ thống **Local Data Lakehouse Pipeline** hoàn chỉnh, tự động hóa toàn diện và miễn phí 100%, được thiết kế để chạy trên máy cá nhân sử dụng **Docker**, **Apache Airflow**, **MinIO (S3-compatible)** và **PySpark** nhằm nạp (Ingestion), xử lý (Processing), lưu trữ (Delta Lake) và phân tích dữ liệu phái sinh lịch sử hàng ngày từ Sở giao dịch Chứng khoán Singapore (**SGX - Singapore Exchange**).
 
 ---
 
 ## 🛠️ Công nghệ cốt lõi
 
-Dự án áp dụng mô hình **Pure Cloud Lakehouse Architecture** với các công nghệ:
+Dự án áp dụng mô hình **Modern Data Stack Local** với các công nghệ:
 
-![Databricks](https://img.shields.io/badge/Databricks-FF3621?style=for-the-badge&logo=databricks&logoColor=white)
+![Apache Airflow](https://img.shields.io/badge/Apache_Airflow-017CE9?style=for-the-badge&logo=apacheairflow&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white)
 ![Apache Spark](https://img.shields.io/badge/Apache_Spark-E25A1C?style=for-the-badge&logo=apachespark&logoColor=white)
 ![Delta Lake](https://img.shields.io/badge/Delta_Lake-00ADFF?style=for-the-badge&logo=delta&logoColor=white)
-![AWS S3](https://img.shields.io/badge/AWS_S3-569A31?style=for-the-badge&logo=amazons3&logoColor=white)
+![MinIO](https://img.shields.io/badge/MinIO-C92437?style=for-the-badge&logo=minio&logoColor=white)
 ![Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white)
-![FastAPI](https://img.shields.io/badge/FastAPI-005571?style=for-the-badge&logo=fastapi&logoColor=white)
+![Grafana](https://img.shields.io/badge/Grafana-F46800?style=for-the-badge&logo=grafana&logoColor=white)
 
 ---
 
-## 📐 1. Kiến trúc luồng dữ liệu (Cloud Architecture)
+## 📐 1. Kiến trúc luồng dữ liệu (Local Architecture)
 
-Hệ thống được vận hành hoàn toàn trên **Databricks** kết hợp với **AWS S3 Object Storage**, giải quyết triệt để các rào cản về bảo mật hệ thống tệp và giới hạn hạ tầng của phiên bản Cloud Serverless/Community Edition:
+Quy trình dữ liệu được lập lịch tự động bằng **Airflow**, chạy xử lý song song bằng **Spark Local JVM** và lưu trữ thành phẩm Delta Lake trên **MinIO Object Store**:
 
 ```mermaid
 graph TD
@@ -27,26 +28,22 @@ graph TD
         SGX[SGX Historical Server]
     end
 
-    subgraph "Databricks Cloud Platform"
-        01_Ing[Notebook: 01_Ingestion] -->|Download & Stream| S3Raw[AWS S3 Raw Zone - raw/]
+    subgraph "Local Docker & Machine Environment"
+        01_Ing[Script: 01_Ingestion.py] -->|Tải & Gửi qua API| MinIORaw[MinIO Raw Zone - raw/]
         
-        S3Raw -->|Copy & Unzip| UC_Vol[Unity Catalog Volume - /Volumes/]
+        MinIORaw -->|Tải & Giải nén| TempFolder[Thư mục tạm local - temp/]
         
-        UC_Vol -->|Spark Read CSV| Spark[PySpark Distribute Engine]
+        TempFolder -->|Spark đọc CSV local| Spark[PySpark Engine local]
         
-        Spark -->|Clean & Partition| UC_Vol_Temp[Temp Volume Export]
+        Spark -->|Xử lý & Ghi Delta TRỰC TIẾP| MinIOProc[MinIO Processed Zone - processed/]
         
-        UC_Vol_Temp -->|Python boto3 bypass upload| S3Proc[AWS S3 Processed Zone - processed/]
+        MinIOProc -->|Delta Lake Format| Delta[Delta Tables: ticks, trade_cancellations]
         
-        S3Proc -->|Delta Lake Format| Delta[Delta Tables: ticks, trade_cancellations]
-        
-        Maint[Notebook: 04_Maintenance] -->|OPTIMIZE & VACUUM| Delta
+        Maint[Script: 04_Maintenance.py] -->|OPTIMIZE & VACUUM| Delta
     end
 
     subgraph "Data Serving & Presentation"
-        Delta -->|Databricks SQL / Athena| DB_Dash[Databricks SQL Dashboard]
-        S3Proc -->|boto3 API Query| FastAPI[FastAPI Server - Port 8000]
-        FastAPI -->|JSON Payload| Frontend[HTML5 / JS Dashboard UI]
+        Delta -->|Truy vấn trực tiếp| Grafana[Grafana Dashboard]
     end
 ```
 
@@ -56,131 +53,91 @@ graph TD
 
 ```text
 SGX_Derivatives_Daily_Downloader/
-├── databricks_pipeline/         # Pipeline chạy trên nền tảng Cloud Databricks
+├── local_pipeline/              # 🖥️ MÔI TRƯỜNG LOCAL (Docker, Airflow, MinIO, PySpark)
+│   ├── 01_Ingestion.py          # Tải dữ liệu thô từ SGX -> MinIO (Raw Zone)
+│   ├── 02_ETL_Tick_Data.py      # PySpark ETL xử lý dữ liệu Ticks -> Delta Table local
+{{ ... }}
+│   ├── dags/
+│   │   └── sgx_daily_pipeline.py# Airflow DAG tự động hóa chuỗi 4 task trên Docker
+│   ├── docker/
+│   │   ├── Dockerfile           # Custom image tích hợp Java 17 + PySpark cho Airflow
+│   │   └── docker-compose.yml   # Khởi động PostgreSQL, Airflow và MinIO
+│   └── requirements.txt         # Các thư viện Python cần thiết để chạy trên máy host
+│
+├── databricks_pipeline/         # [Template] Để dành khi cần di chuyển lên Cloud Databricks
 │   ├── 01_Ingestion.py          # Notebook nạp dữ liệu thô từ SGX -> AWS S3 (Raw Zone)
 │   ├── 02_ETL_Tick_Data.py      # Notebook ETL xử lý dữ liệu Ticks -> Delta Table
-│   ├── 02_ETL_Trade_Cancel.py   # Notebook ETL xử lý dữ liệu Hủy lệnh (Trade Cancel) -> Delta Table
-│   ├── 03_Backfill.py           # Notebook nạp bù dữ liệu hàng loạt nhiều ngày
+│   ├── 02_ETL_Trade_Cancel.py   # Notebook ETL xử lý dữ liệu Hủy lệnh -> Delta Table
+│   ├── 03_Backfill.py           # Notebook nạp bù dữ liệu hàng loạt nhiều ngày trên Cloud
 │   ├── 04_Maintenance.py        # Notebook tối ưu hóa Delta Lake (OPTIMIZE & VACUUM)
-│   ├── DATABRICKS_S3_GUIDE.md   # Hướng dẫn chi tiết vượt rào cản S3 Config & Community Edition
-│   └── README.md                # Hướng dẫn setup chi tiết trên Databricks
+│   └── DATABRICKS_S3_GUIDE.md   # Hướng dẫn chi tiết vượt giới hạn S3 trên Databricks
 │
-├── dashboard/                   # Dashboard trực quan hóa dữ liệu xử lý xong từ S3
-│   ├── frontend/                # Giao diện HTML/JS tương tác cực đẹp
-│   ├── app.py                   # FastAPI backend kết nối trực tiếp với S3
-│   ├── requirements.txt         # Các gói Python cần thiết để chạy Dashboard
-│   └── OPTIMIZATION_GUIDE.md    # Hướng dẫn tối ưu hóa UI & Cache
+├── dashboard/                   # [Tùy chọn] Backend API cũ nếu không muốn dùng Grafana
+│   ├── app.py                   # FastAPI backend kết nối trực tiếp với MinIO
+│   ├── requirements.txt         # Các gói Python phục vụ backend
+│   └── OPTIMIZATION_GUIDE.md    # Hướng dẫn tối ưu hóa Cache
 │
-├── databricks_migration_plan.md # Kế hoạch chi tiết từ Local Spark lên Cloud Databricks
-├── local_pipeline/              # [Legacy] Thư mục chứa code local cũ (MinIO & PySpark Local)
 └── README.md                    # Tài liệu tổng quan dự án (File này)
 ```
 
 ---
 
-## ⚡ 3. Cơ chế vượt rào cản Cloud Sandbox (Bypass Architecture)
+## 🚀 3. Hướng dẫn cài đặt & Chạy tự động ở Local
 
-Khi chạy trên hệ thống Databricks Serverless hoặc Compute Shared (bao gồm cả Bản Miễn phí Community Edition), Databricks chặn quyền ghi đè cấu hình Hadoop S3A (`fs.s3a.access.key`) và cấm ghi trực tiếp bằng giao thức `s3a://`.
+### Bước 1: Khởi chạy môi trường Docker
+Di chuyển vào thư mục docker của local pipeline và chạy Docker Compose để khởi động hệ thống containers (Postgres, MinIO, Airflow):
+```powershell
+cd local_pipeline/docker
+docker-compose up -d --build
+```
+*Giao diện bảng điều khiển các dịch vụ local:*
+*   **Airflow Web UI**: `http://localhost:8080` (Tài khoản/Mật khẩu mặc định: `admin` / `admin`).
+*   **MinIO Console**: `http://localhost:9001` (Tài khoản/Mật khẩu mặc định: `minioadmin` / `minioadmin`).
 
-Dự án áp dụng thiết kế trung chuyển qua **Unity Catalog Volumes** kết hợp **boto3 upload** để vượt qua các giới hạn này:
-1. **Raw Ingestion**: File `.zip` từ SGX được nạp qua HTTPS và upload trực tiếp lên `s3://` bằng `boto3` client.
-2. **Intermediate Extraction**: Do Spark không hỗ trợ native file ZIP nhiều phần, notebook sẽ tải file `.zip` từ S3 xuống SSD tạm của Driver, giải nén trực tiếp vào Unity Catalog Volume (`/Volumes/hive_metastore/sgx_lakehouse/temp_volume`).
-3. **ETL Cleansing**: PySpark đọc file `.csv` thô cực nhanh từ Volume, thực hiện lọc schema, ép kiểu, phân vùng theo ngày giao dịch (`TradeDateParsed`) và ghi đè vào thư mục xuất tạm của Volume.
-4. **S3 Delivery (Bypass)**: Một tiến trình Python (`boto3`) quét thư mục xuất trên Volume, tự động xóa file rác, định danh lại tên tệp thành tệp chuẩn (ví dụ: `part_0.csv`) rồi đẩy lên S3.
+### Bước 2: Theo dõi và Kích hoạt trên Airflow
+1. Truy cập `http://localhost:8080` và đăng nhập bằng tài khoản `admin` / `admin`.
+2. Tìm kiếm DAG `sgx_derivatives_daily_pipeline`.
+3. Gạt công tắc bên trái tên DAG sang màu xanh (**Unpause**) để kích hoạt lịch chạy tự động vào lúc **22:00 hàng ngày (Thứ 2 - Thứ 6)**.
+4. Bạn có thể nhấn nút **Trigger DAG** (nút Play bên phải) để chạy thử nghiệm pipeline lập tức cho ngày hôm nay.
 
-> [!NOTE]
-> Giải pháp này giúp hệ thống vận hành trơn tru trên mọi nền tảng Databricks mà không phụ thuộc vào quyền Admin Cluster hay các cấu hình IAM Instance Profile đắt đỏ.
+### Bước 3: Chạy nạp bù thủ công local (Backfill)
+Nếu bạn muốn nạp bù dữ liệu lịch sử trong một khoảng thời gian dài ở local mà không muốn trigger từng ngày trên giao diện Airflow:
+1. Đảm bảo container MinIO đang chạy (`docker-compose up -d minio`).
+2. Di chuyển vào thư mục `local_pipeline` và cài đặt các thư viện cần thiết ở máy host:
+   ```powershell
+   cd local_pipeline
+   pip install -r requirements.txt
+   ```
+3. Chạy lệnh backfill (ví dụ nạp bù toàn bộ tháng 3 và tháng 4 năm 2026):
+   ```powershell
+   python 03_Backfill.py --start-date 2026-03-01 --end-date 2026-04-30
+   ```
 
 ---
 
-## 🚀 4. Hướng dẫn cài đặt & Chạy trên Databricks
+## 📊 4. Cấu hình Giám sát qua Grafana
+Để trực quan hóa dữ liệu phái sinh từ SGX sau khi đã được lưu trữ trong MinIO:
 
-### Bước 1: Chuẩn bị Bucket AWS S3
-1. Tạo một bucket S3 trên AWS Console (ví dụ: `sgx-derivatives-daily-data-079`).
-2. Tạo IAM User và cấp quyền đọc/ghi (`s3:PutObject`, `s3:GetObject`, `s3:DeleteObject`, `s3:ListBucket`) vào bucket này. Lưu lại `Access Key ID` và `Secret Access Key`.
+### Cách A: Kết nối trực tiếp S3/MinIO Delta Tables qua AWS Athena / DuckDB
+1. Cấu hình nguồn dữ liệu trỏ vào bucket `sgx-lakehouse` trên MinIO.
+2. Sử dụng câu lệnh SQL trực tiếp trên Grafana để vẽ các chỉ số thị trường (Volume, Price, Trade Count).
 
-### Bước 2: Đăng nhập Databricks CLI và tạo Secrets
-Cài đặt Databricks CLI trên máy tính của bạn:
-```powershell
-winget install Databricks.DatabricksCLI
-```
-Đăng nhập vào Workspace của bạn:
-```powershell
-databricks auth login --host https://<databricks-instance>.cloud.databricks.com
-```
-Chạy các lệnh sau để tạo Secret Scope và lưu trữ an toàn các Keys:
-```powershell
-# 1. Tạo scope bảo mật
-databricks secrets create-scope sgx-scope
-
-# 2. Nhập Access Key
-databricks secrets put-secret sgx-scope aws-access-key
-
-# 3. Nhập Secret Key
-databricks secrets put-secret sgx-scope aws-secret-key
-```
-
-### Bước 3: Cài đặt Schema & Volume trên Databricks
-Mở giao diện Databricks, chạy lệnh SQL sau trong SQL Editor hoặc Notebook để tạo không gian làm việc:
-```sql
-CREATE SCHEMA IF NOT EXISTS sgx_lakehouse;
-CREATE VOLUME IF NOT EXISTS sgx_lakehouse.temp_volume;
-```
-
-### Bước 4: Đồng bộ mã nguồn lên Databricks
-Bạn có thể đồng bộ nhanh thư mục `databricks_pipeline/` lên Workspace bằng CLI:
-```powershell
-databricks workspace import-dir ./databricks_pipeline /Users/<your-email-address>/databricks_pipeline
-```
-Hoặc liên kết trực tiếp Git repo của bạn thông qua tính năng **Git Folders** trong Databricks Workspace.
-
-### Bước 5: Cấu hình và Tự động hóa Pipeline bằng Databricks Workflows
-Để tự động hóa hoàn toàn quy trình xử lý dữ liệu hàng ngày, hãy tạo một Job trong mục **Workflows**:
-
-```mermaid
-graph TD
-    A[⏰ Trigger Hàng ngày: 22:00 SGT] --> B[Task 1: 01_Ingestion]
-    B -->|Thành công| C[Task 2: 02_ETL_Tick_Data]
-    B -->|Thành công| D[Task 3: 02_ETL_Trade_Cancel]
-    C --> E[Task 4: 04_Maintenance]
-    D --> E
-```
-
-**Cấu hình các Task:**
-*   **Task 1**: Trỏ tới notebook `01_Ingestion.py`.
-*   **Task 2**: Trỏ tới notebook `02_ETL_Tick_Data.py` (chạy song song với Task 3).
-*   **Task 3**: Trỏ tới notebook `02_ETL_Trade_Cancel.py`.
-*   **Task 4**: Trỏ tới notebook `04_Maintenance.py` (dọn dẹp và nén tối ưu Delta Lake sau khi xử lý xong).
-
-**Tham số truyền vào (Job Widgets):**
-*   `bucket`: Tên S3 bucket của bạn (ví dụ: `sgx-derivatives-daily-data-079`)
-*   `secret_scope`: `sgx-scope`
-*   `date`: Bỏ trống (Hệ thống tự nhận diện ngày hiện tại) hoặc nhập ngày định dạng `YYYY-MM-DD` để nạp thủ công.
-
----
-
-## 📊 5. Cài đặt Dashboard giám sát
-Dashboard cung cấp giao diện trực quan cực đẹp để tương tác với dữ liệu phân tích đã xử lý từ S3.
-
-### 1. Cấu hình biến môi trường
-Di chuyển vào thư mục `dashboard/` và tạo file `.env`:
-```env
-AWS_ACCESS_KEY_ID=your_access_key
-AWS_SECRET_ACCESS_KEY=your_secret_key
-AWS_DEFAULT_REGION=ap-southeast-1
-AWS_BUCKET_NAME=sgx-derivatives-daily-data-079
-```
-
-### 2. Cài đặt & Khởi chạy ứng dụng
-Cài đặt thư viện:
-```powershell
-pip install -r requirements.txt
-```
-Khởi chạy FastAPI server:
-```powershell
-python app.py
-```
-Mở tệp [index.html](file:///e:/DataEngineer/DE/Class3/SGX_Derivatives_Daily_Downloader/dashboard/frontend/index.html) bằng trình duyệt web để theo dõi dashboard trực quan với các biểu đồ về khối lượng giao dịch phái sinh và thống kê các lệnh hủy lịch sử.
+### Cách B: Sử dụng FastAPI Backend API làm nguồn dữ liệu JSON
+1. Di chuyển vào thư mục `dashboard/` và tạo file `.env`:
+   ```env
+   AWS_ACCESS_KEY_ID=your_access_key
+   AWS_SECRET_ACCESS_KEY=your_secret_key
+   AWS_DEFAULT_REGION=ap-southeast-1
+   AWS_BUCKET_NAME=sgx-derivatives-daily-data-079
+   ```
+2. Cài đặt thư viện & Khởi chạy API server:
+   ```powershell
+   pip install -r requirements.txt
+   python app.py
+   ```
+3. Trên Grafana, cài đặt plugin **JSON API** hoặc **Infinity** và cấu hình nguồn dữ liệu trỏ vào endpoint:
+   * URL lấy danh sách ngày có sẵn: `http://localhost:8000/api/available-dates`
+   * URL lấy dữ liệu phân tích chi tiết của một ngày: `http://localhost:8000/api/dashboard-data?date=YYYY-MM-DD`
 
 ---
 

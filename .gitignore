@@ -39,5 +39,5 @@ env/
 # Dashboard temporary local cache
 dashboard/cache/
 
-# Local pipeline (moved to Databricks)
-local_pipeline/
+# AI Agent Configuration Kit
+.agents/
