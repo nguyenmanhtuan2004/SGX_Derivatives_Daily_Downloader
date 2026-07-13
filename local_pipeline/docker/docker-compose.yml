@@ -40,8 +40,8 @@ services:
 
   airflow-init:
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ../
+      dockerfile: docker/Dockerfile
     container_name: sgx_airflow_init
     environment:
       - AIRFLOW__CORE__LOAD_EXAMPLES=False
@@ -55,8 +55,8 @@ services:
 
   airflow-webserver:
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ../
+      dockerfile: docker/Dockerfile
     container_name: sgx_airflow_webserver
     ports:
       - "8080:8080"
@@ -80,8 +80,8 @@ services:
 
   airflow-scheduler:
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ../
+      dockerfile: docker/Dockerfile
     container_name: sgx_airflow_scheduler
     volumes:
       - ../dags:/opt/airflow/dags
