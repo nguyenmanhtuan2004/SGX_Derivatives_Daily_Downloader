@@ -48,6 +48,12 @@ def main():
         secret_key = os.getenv("MINIO_SECRET_KEY", "minioadmin")
         bucket = os.getenv("MINIO_BUCKET", "sgx-lakehouse")
 
+    # Loại bỏ khoảng trắng và ký tự xuống dòng thừa (\r) nếu có
+    endpoint = endpoint.strip()
+    access_key = access_key.strip()
+    secret_key = secret_key.strip()
+    bucket = bucket.strip()
+
     spark = init_spark_session(endpoint, access_key, secret_key)
 
     # Khai báo đường dẫn delta table trên MinIO
