@@ -57,6 +57,10 @@ def init_spark_session(endpoint, access_key, secret_key):
         .config("spark.hadoop.fs.s3a.path.style.access", "true") \
         .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem") \
         .config("spark.hadoop.fs.s3a.connection.ssl.enabled", "false") \
+        .config("spark.hadoop.fs.s3a.connection.timeout", "60000") \
+        .config("spark.hadoop.fs.s3a.connection.establish.timeout", "50000") \
+        .config("spark.hadoop.fs.s3a.connection.idle.time", "60000") \
+        .config("spark.hadoop.fs.s3a.threads.keepalivetime", "60") \
         .config("spark.driver.memory", "1g") \
         .config("spark.executor.memory", "1g") \
         .getOrCreate()
