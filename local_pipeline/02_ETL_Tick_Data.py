@@ -64,6 +64,7 @@ def init_spark_session(endpoint, access_key, secret_key):
         .config("spark.hadoop.fs.s3a.connection.establish.timeout", "50000") \
         .config("spark.hadoop.fs.s3a.connection.idle.time", "60000") \
         .config("spark.hadoop.fs.s3a.threads.keepalivetime", "60") \
+        .config("spark.hadoop.fs.s3a.aws.credentials.provider", "org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider") \
         .config("spark.driver.memory", "1g") \
         .config("spark.executor.memory", "1g") \
         .getOrCreate()
