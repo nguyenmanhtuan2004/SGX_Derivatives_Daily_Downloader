@@ -103,13 +103,23 @@ services:
         condition: service_completed_successfully
     restart: unless-stopped
 
-  grafana:
-    image: grafana/grafana:latest
-    container_name: sgx_grafana
-    ports:
-      - "3000:3000"
-    volumes:
-      - grafana_data:/var/lib/grafana
+#  grafana:
+#    image: grafana/grafana:latest
+#    container_name: sgx_grafana
+#    ports:
+#      - "3000:3000"
+#    volumes:
+#      - grafana_data:/var/lib/grafana
+#    depends_on:
+#      - postgres
+#    restart: unless-stopped
+
+  pdc-agent:
+    image: grafana/pdc-agent:latest
+    container_name: sgx_pdc_agent
+    environment:
+      - PDC_AGENT_TOKEN=${GRAFANA_PDC_TOKEN}
+      - PDC_AGENT_CLUSTER=${PDC_AGENT_CLUSTER}
     depends_on:
       - postgres
     restart: unless-stopped
@@ -119,5 +129,5 @@ volumes:
     driver: local
   minio_data:
     driver: local
-  grafana_data:
-    driver: local
+#  grafana_data:
+#    driver: local
