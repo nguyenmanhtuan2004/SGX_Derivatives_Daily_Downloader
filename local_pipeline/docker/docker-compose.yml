@@ -117,13 +117,16 @@ services:
   pdc-agent:
     image: grafana/pdc-agent:latest
     container_name: sgx_pdc_agent
-    environment:
-      - PDC_AGENT_TOKEN=${GRAFANA_PDC_TOKEN}
-      - PDC_AGENT_CLUSTER=${PDC_AGENT_CLUSTER}
-      - PDC_AGENT_GCLOUD_HOSTED_GRAFANA_ID=${GRAFANA_HOSTED_ID}
+    restart: always
+    command:
+      - "-token"
+      - "${GRAFANA_PDC_TOKEN}"
+      - "-cluster"
+      - "${PDC_AGENT_CLUSTER}"
+      - "-gcloud-hosted-grafana-id"
+      - "${GRAFANA_HOSTED_ID}"
     depends_on:
       - postgres
-    restart: unless-stopped
 
 volumes:
   postgres_data:
