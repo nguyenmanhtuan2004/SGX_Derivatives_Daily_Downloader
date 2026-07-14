@@ -25,20 +25,33 @@ def init_spark_session(endpoint, access_key, secret_key):
         pass
 
     try:
+        import importlib.metadata
+        delta_ver = importlib.metadata.version("delta-spark")
+    except Exception:
+        delta_ver = None
+
+    try:
         import pyspark
         spark_ver = pyspark.__version__
     except Exception:
         spark_ver = "3.4.0"
         
-    # Chọn package Delta tương thích (Delta 2.4.0 có tên là delta-core, Delta 3.0.0+ có tên là delta-spark)
-    if spark_ver.startswith("3.4"):
-        delta_pkg = f"io.delta:delta-core_{scala_ver}:2.4.0"
-    elif spark_ver.startswith("3.5"):
-        delta_pkg = f"io.delta:delta-spark_{scala_ver}:3.0.0"
-    elif spark_ver.startswith("4.0"):
-        delta_pkg = f"io.delta:delta-spark_{scala_ver}:4.0.0"
+    # Chọn package Delta tương thích (Delta 2.x dùng delta-core, Delta 3.x+ dùng delta-spark)
+    if delta_ver:
+        if delta_ver.startswith("2."):
+            delta_pkg = f"io.delta:delta-core_{scala_ver}:{delta_ver}"
+        else:
+            delta_pkg = f"io.delta:delta-spark_{scala_ver}:{delta_ver}"
     else:
-        delta_pkg = f"io.delta:delta-core_{scala_ver}:2.4.0"
+        # Fallback thủ công nếu không lấy được phiên bản từ python metadata
+        if spark_ver.startswith("3.4"):
+            delta_pkg = f"io.delta:delta-core_{scala_ver}:2.4.0"
+        elif spark_ver.startswith("3.5"):
+            delta_pkg = f"io.delta:delta-spark_{scala_ver}:3.3.0"
+        elif spark_ver.startswith("4.0"):
+            delta_pkg = f"io.delta:delta-spark_{scala_ver}:4.0.0"
+        else:
+            delta_pkg = f"io.delta:delta-core_{scala_ver}:2.4.0"
         
     return SparkSession.builder \
         .appName("SGX_Maintenance_Local") \
