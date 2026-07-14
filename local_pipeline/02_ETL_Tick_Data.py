@@ -66,7 +66,7 @@ def init_spark_session(endpoint, access_key, secret_key):
         .appName("SGX_Tick_Data_ETL_Local") \
         .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension") \
         .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog") \
-        .config("spark.jars.packages", f"{delta_pkg},org.apache.hadoop:hadoop-aws:3.3.4") \
+        .config("spark.jars.packages", f"{delta_pkg},org.apache.hadoop:hadoop-aws:3.3.4,org.postgresql:postgresql:42.6.0") \
         .config("spark.hadoop.fs.s3a.endpoint", endpoint) \
         .config("spark.hadoop.fs.s3a.access.key", access_key) \
         .config("spark.hadoop.fs.s3a.secret.key", secret_key) \
@@ -100,11 +100,23 @@ def main():
         access_key = os.getenv("MINIO_ACCESS_KEY", config.get("minio", "access_key", fallback="minioadmin"))
         secret_key = os.getenv("MINIO_SECRET_KEY", config.get("minio", "secret_key", fallback="minioadmin"))
         bucket = os.getenv("MINIO_BUCKET", config.get("minio", "bucket", fallback="sgx-lakehouse"))
+        
+        pg_host = os.getenv("POSTGRES_HOST", config.get("postgres", "host", fallback="localhost")).strip()
+        pg_port = os.getenv("POSTGRES_PORT", config.get("postgres", "port", fallback="5432")).strip()
+        pg_user = os.getenv("POSTGRES_USER", config.get("postgres", "user", fallback="airflow")).strip()
+        pg_pass = os.getenv("POSTGRES_PASSWORD", config.get("postgres", "password", fallback="airflow")).strip()
+        pg_db = os.getenv("POSTGRES_DB", config.get("postgres", "database", fallback="airflow")).strip()
     else:
         endpoint = os.getenv("MINIO_ENDPOINT", "http://localhost:9000")
         access_key = os.getenv("MINIO_ACCESS_KEY", "minioadmin")
         secret_key = os.getenv("MINIO_SECRET_KEY", "minioadmin")
         bucket = os.getenv("MINIO_BUCKET", "sgx-lakehouse")
+        
+        pg_host = os.getenv("POSTGRES_HOST", "localhost").strip()
+        pg_port = os.getenv("POSTGRES_PORT", "5432").strip()
+        pg_user = os.getenv("POSTGRES_USER", "airflow").strip()
+        pg_pass = os.getenv("POSTGRES_PASSWORD", "airflow").strip()
+        pg_db = os.getenv("POSTGRES_DB", "airflow").strip()
 
     # Loại bỏ khoảng trắng và ký tự xuống dòng thừa (\r) nếu có
     endpoint = endpoint.strip()
@@ -226,6 +238,43 @@ def main():
             .mode("overwrite") \
             .partitionBy("TradeDateParsed") \
             .save(summary_output_path)
+
+        # Ghi dữ liệu summary vào PostgreSQL với giải thuật Idempotency
+        jdbc_url = f"jdbc:postgresql://{pg_host}:{pg_port}/{pg_db}"
+        try:
+            logger.info("Đang thực hiện dọn dẹp dữ liệu cũ (nếu có) trên Postgres để tránh trùng lặp...")
+            spark._jvm.java.lang.Class.forName("org.postgresql.Driver")
+            conn = spark._jvm.java.sql.DriverManager.getConnection(jdbc_url, pg_user, pg_pass)
+            stmt = conn.createStatement()
+            
+            dates_in_batch = [r["TradeDateParsed"].strftime("%Y-%m-%d") for r in df_summary.select("TradeDateParsed").distinct().collect() if r["TradeDateParsed"] is not None]
+            if dates_in_batch:
+                dates_str = ", ".join([f"'{d}'" for d in dates_in_batch])
+                delete_sql = f"DELETE FROM ticks_summary WHERE \"TradeDateParsed\" IN ({dates_str})"
+                logger.info(f"Thực thi câu lệnh SQL: {delete_sql}")
+                try:
+                    stmt.executeUpdate(delete_sql)
+                except Exception as e:
+                    logger.info("Bảng ticks_summary chưa được tạo hoặc chưa có dữ liệu cũ, bỏ qua bước xóa.")
+            stmt.close()
+            conn.close()
+        except Exception as e:
+            logger.warning(f"Lỗi khi xóa dữ liệu trùng lặp trên Postgres: {e}")
+
+        try:
+            logger.info(f"Ghi dữ liệu summary vào bảng ticks_summary trên Postgres...")
+            df_summary.write \
+                .format("jdbc") \
+                .option("url", jdbc_url) \
+                .option("dbtable", "ticks_summary") \
+                .option("user", pg_user) \
+                .option("password", pg_pass) \
+                .option("driver", "org.postgresql.Driver") \
+                .mode("append") \
+                .save()
+            logger.info("✓ Ghi dữ liệu vào Postgres thành công!")
+        except Exception as e:
+            logger.error(f"✗ Lỗi khi ghi dữ liệu vào Postgres: {e}")
 
         logger.info("✓ Hoàn thành ETL Tick Data thành công!")
     except Exception as e:

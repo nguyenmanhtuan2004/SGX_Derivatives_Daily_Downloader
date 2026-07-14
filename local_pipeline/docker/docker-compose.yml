@@ -70,6 +70,7 @@ services:
       - MINIO_ACCESS_KEY=minioadmin
       - MINIO_SECRET_KEY=minioadmin
       - MINIO_BUCKET=sgx-lakehouse
+      - POSTGRES_HOST=postgres
     command: webserver
     depends_on:
       postgres:
@@ -93,12 +94,22 @@ services:
       - MINIO_ACCESS_KEY=minioadmin
       - MINIO_SECRET_KEY=minioadmin
       - MINIO_BUCKET=sgx-lakehouse
+      - POSTGRES_HOST=postgres
     command: scheduler
     depends_on:
       postgres:
         condition: service_healthy
       airflow-init:
         condition: service_completed_successfully
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: sgx_grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      - postgres
     restart: unless-stopped
 
 volumes:

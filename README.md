@@ -63,21 +63,25 @@ graph TD
 
 ---
 
-
 ## 📁 2. Cấu trúc thư mục (Project Structure)
 
 ```text
 SGX_Derivatives_Daily_Downloader/
 ├── local_pipeline/              # 🖥️ MÔI TRƯỜNG LOCAL (Docker, Airflow, MinIO, PySpark)
-│   ├── 01_Ingestion.py          # Tải dữ liệu thô từ SGX -> MinIO (Raw Zone)
-│   ├── 02_ETL_Tick_Data.py      # PySpark ETL xử lý dữ liệu Ticks -> Delta Table local
-{{ ... }}
+│   ├── config/
+│   │   └── config.ini           # Cấu hình MinIO, SGX reference ID & logging
 │   ├── dags/
 │   │   └── sgx_daily_pipeline.py# Airflow DAG tự động hóa chuỗi 4 task trên Docker
 │   ├── docker/
 │   │   ├── Dockerfile           # Custom image tích hợp Java 17 + PySpark cho Airflow
 │   │   └── docker-compose.yml   # Khởi động PostgreSQL, Airflow và MinIO
-│   └── requirements.txt         # Các thư viện Python cần thiết để chạy trên máy host
+│   ├── 01_Ingestion.py          # Tải dữ liệu thô từ SGX -> MinIO (Raw Zone)
+│   ├── 02_ETL_Tick_Data.py      # PySpark ETL xử lý dữ liệu Ticks -> Delta Table
+│   ├── 02_ETL_Trade_Cancel.py   # PySpark ETL xử lý dữ liệu Hủy lệnh -> Delta Table
+│   ├── 03_Backfill.py           # Chạy nạp bù dữ liệu hàng loạt nhiều ngày local
+│   ├── 04_Maintenance.py        # Tối ưu hóa Delta Lake local (OPTIMIZE & VACUUM)
+│   ├── DEPLOY_GUIDE.md          # Hướng dẫn chi tiết triển khai lên Cloud (DigitalOcean VPS)
+│   └── requirements.txt         # Các thư viện Python cần thiết chạy trên máy host
 │
 ├── databricks_pipeline/         # [Template] Để dành khi cần di chuyển lên Cloud Databricks
 │   ├── 01_Ingestion.py          # Notebook nạp dữ liệu thô từ SGX -> AWS S3 (Raw Zone)
@@ -85,12 +89,7 @@ SGX_Derivatives_Daily_Downloader/
 │   ├── 02_ETL_Trade_Cancel.py   # Notebook ETL xử lý dữ liệu Hủy lệnh -> Delta Table
 │   ├── 03_Backfill.py           # Notebook nạp bù dữ liệu hàng loạt nhiều ngày trên Cloud
 │   ├── 04_Maintenance.py        # Notebook tối ưu hóa Delta Lake (OPTIMIZE & VACUUM)
-│   └── DATABRICKS_S3_GUIDE.md   # Hướng dẫn chi tiết vượt giới hạn S3 trên Databricks
-│
-├── dashboard/                   # [Tùy chọn] Backend API cũ nếu không muốn dùng Grafana
-│   ├── app.py                   # FastAPI backend kết nối trực tiếp với MinIO
-│   ├── requirements.txt         # Các gói Python phục vụ backend
-│   └── OPTIMIZATION_GUIDE.md    # Hướng dẫn tối ưu hóa Cache
+│   └── DATABRICKS_S3_GUIDE.md   # Hướng dẫn chi tiết cấu hình S3 trên Databricks
 │
 └── README.md                    # Tài liệu tổng quan dự án (File này)
 ```
@@ -133,33 +132,16 @@ Nếu bạn muốn nạp bù dữ liệu lịch sử trong một khoảng thời
 ## 📊 4. Cấu hình Giám sát qua Grafana
 Để trực quan hóa dữ liệu phái sinh từ SGX sau khi đã được lưu trữ trong MinIO:
 
-### Cách A: Kết nối trực tiếp S3/MinIO Delta Tables qua AWS Athena / DuckDB
+### Kết nối trực tiếp S3/MinIO Delta Tables qua AWS Athena / DuckDB
 1. Cấu hình nguồn dữ liệu trỏ vào bucket `sgx-lakehouse` trên MinIO.
-2. Sử dụng câu lệnh SQL trực tiếp trên Grafana để vẽ các chỉ số thị trường (Volume, Price, Trade Count).
-
-### Cách B: Sử dụng FastAPI Backend API làm nguồn dữ liệu JSON
-1. Di chuyển vào thư mục `dashboard/` và tạo file `.env`:
-   ```env
-   AWS_ACCESS_KEY_ID=your_access_key
-   AWS_SECRET_ACCESS_KEY=your_secret_key
-   AWS_DEFAULT_REGION=ap-southeast-1
-   AWS_BUCKET_NAME=sgx-derivatives-daily-data-079
-   ```
-2. Cài đặt thư viện & Khởi chạy API server:
-   ```powershell
-   pip install -r requirements.txt
-   python app.py
-   ```
-3. Trên Grafana, cài đặt plugin **JSON API** hoặc **Infinity** và cấu hình nguồn dữ liệu trỏ vào endpoint:
-   * URL lấy danh sách ngày có sẵn: `http://localhost:8000/api/available-dates`
-   * URL lấy dữ liệu phân tích chi tiết của một ngày: `http://localhost:8000/api/dashboard-data?date=YYYY-MM-DD`
+2. Sử dụng câu lệnh SQL trực tiếp trên Grafana (thông qua DuckDB hoặc các S3/Parquet connector tương thích) để vẽ các chỉ số thị trường (Volume, Price, Trade Count).
 
 ---
 
-## 🛠️ 6. Bảo trì & Tối ưu hóa Delta Lake
-Delta Tables lưu trên Cloud cần được dọn dẹp định kỳ để tránh sinh file rác phiên bản cũ (vốn gây tăng chi phí lưu trữ S3). 
+## 🛠️ 5. Bảo trì & Tối ưu hóa Delta Lake
+Delta Tables lưu trên MinIO/S3 cần được dọn dẹp định kỳ để tránh sinh file rác phiên bản cũ (vốn gây tăng dung lượng lưu trữ). 
 
-Notebook `04_Maintenance.py` thực hiện:
+Script `04_Maintenance.py` thực hiện:
 *   **OPTIMIZE**: Nén các file phân tán nhỏ thành các file lớn hơn để tối ưu hóa IO khi quét dữ liệu.
 *   **VACUUM RETAIN 168 HOURS**: Dọn dẹp triệt để các phiên bản cũ đã tồn tại hơn 7 ngày, giúp giảm dung lượng lưu trữ trên bucket.
 
