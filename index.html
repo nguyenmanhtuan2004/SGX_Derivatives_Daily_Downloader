@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SGX Derivatives Market Dashboard</title>
+    <!-- Google Fonts Inter & Outfit -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0b0d19;
+            --card-bg: rgba(18, 22, 41, 0.7);
+            --border-color: rgba(255, 255, 255, 0.08);
+            --text-primary: #f3f4f6;
+            --text-secondary: #9ca3af;
+            --accent-glow: #38bdf8;
+            --accent-gradient: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+            --accent-hover: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%);
+            --shadow-glow: rgba(56, 189, 248, 0.15);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            min-height: 100vh;
+            padding: 2rem 1.5rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-image: 
+                radial-gradient(circle at 10% 20%, rgba(2, 132, 199, 0.05) 0%, transparent 40%),
+                radial-gradient(circle at 90% 80%, rgba(3, 105, 161, 0.05) 0%, transparent 40%);
+            background-attachment: fixed;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 2.5rem;
+            max-width: 800px;
+            width: 100%;
+        }
+
+        h1 {
+            font-family: 'Outfit', sans-serif;
+            font-size: 2.5rem;
+            font-weight: 800;
+            background: linear-gradient(to right, #f3f4f6, #9ca3af, #38bdf8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 0.75rem;
+            letter-spacing: -0.03em;
+        }
+
+        .subtitle {
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+            margin-bottom: 1.5rem;
+            line-height: 1.6;
+        }
+
+        /* Go to Live Snapshot Button */
+        .btn-live {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0.8rem 2rem;
+            font-family: 'Outfit', sans-serif;
+            font-size: 1rem;
+            font-weight: 600;
+            text-decoration: none;
+            color: #ffffff;
+            background: var(--accent-gradient);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 50px;
+            box-shadow: 0 4px 20px var(--shadow-glow);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            cursor: pointer;
+        }
+
+        .btn-live:hover {
+            transform: translateY(-2px);
+            background: var(--accent-hover);
+            box-shadow: 0 6px 24px rgba(56, 189, 248, 0.3);
+        }
+
+        .btn-live svg {
+            margin-right: 0.5rem;
+            width: 1.2rem;
+            height: 1.2rem;
+            fill: currentColor;
+        }
+
+        /* Dashboard Grid Layout */
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 2rem;
+            max-width: 1400px;
+            width: 100%;
+            margin-top: 1rem;
+        }
+
+        @media (max-width: 968px) {
+            .dashboard-grid {
+                grid-template-columns: 1fr;
+            }
+            h1 {
+                font-size: 2rem;
+            }
+        }
+
+        /* Card styles with glassmorphism */
+        .card {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 1.5rem;
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+            display: flex;
+            flex-direction: column;
+            transition: transform 0.3s ease, border-color 0.3s ease;
+        }
+
+        .card:hover {
+            border-color: rgba(56, 189, 248, 0.3);
+        }
+
+        .card-header {
+            margin-bottom: 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .card-title {
+            font-family: 'Outfit', sans-serif;
+            font-size: 1.2rem;
+            font-weight: 600;
+            color: #ffffff;
+        }
+
+        .card-badge {
+            background-color: rgba(56, 189, 248, 0.1);
+            color: var(--accent-glow);
+            padding: 0.25rem 0.75rem;
+            border-radius: 50px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            border: 1px solid rgba(56, 189, 248, 0.2);
+        }
+
+        .image-container {
+            position: relative;
+            width: 100%;
+            padding-top: 56.25%; /* 16:9 Aspect Ratio */
+            border-radius: 8px;
+            overflow: hidden;
+            background-color: rgba(0, 0, 0, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .image-container img {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transition: transform 0.5s ease;
+        }
+
+        .card:hover .image-container img {
+            transform: scale(1.03);
+        }
+
+        /* Footer */
+        footer {
+            margin-top: 4rem;
+            text-align: center;
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            width: 100%;
+            padding: 1.5rem 0;
+            border-top: 1px solid var(--border-color);
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>Báo Cáo Phân Tích Phái Sinh SGX</h1>
+        <p class="subtitle">
+            Báo cáo trực quan hóa dữ liệu phái sinh hàng ngày được nạp và xử lý qua Spark Lakehouse. 
+            Mã hóa dữ liệu và lưu trữ Snapshot để bảo toàn dữ liệu khi máy chủ Docker/Database local tắt.
+        </p>
+        <a href="https://loyallagoon578.grafana.net/dashboard/snapshot/OzCkca6jTYjtvC4r2AlgfWUnpff7uEZ0" target="_blank" class="btn-live">
+            <svg viewBox="0 0 24 24">
+                <path d="M19 19H5V5h7V3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z"/>
+            </svg>
+            Truy Cập Grafana Live Snapshot
+        </a>
+    </header>
+
+    <main class="dashboard-grid">
+        <!-- Card 1 -->
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">Tổng quan Khối lượng & Tần suất</h2>
+                <span class="card-badge">KPI Cards</span>
+            </div>
+            <div class="image-container">
+                <img src="dashboard/images/chart1.png" alt="Tổng quan Khối lượng và Tần suất giao dịch">
+            </div>
+        </div>
+
+        <!-- Card 2 -->
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">Xu hướng Giá & Khối lượng theo Giờ</h2>
+                <span class="card-badge">Time Series</span>
+            </div>
+            <div class="image-container">
+                <img src="dashboard/images/chart2.png" alt="Xu hướng biến động giá và khối lượng giao dịch">
+            </div>
+        </div>
+
+        <!-- Card 3 -->
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">Phân bổ thanh khoản theo Khung giờ</h2>
+                <span class="card-badge">Bar Chart</span>
+            </div>
+            <div class="image-container">
+                <img src="dashboard/images/chart3.png" alt="Phân bổ volume theo giờ trong ngày">
+            </div>
+        </div>
+
+        <!-- Card 4 -->
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">Cơ cấu giao dịch & Bảng chi tiết</h2>
+                <span class="card-badge">Pie & Table</span>
+            </div>
+            <div class="image-container">
+                <img src="dashboard/images/chart4.png" alt="Cơ cấu thị phần sản phẩm và bảng chi tiết">
+            </div>
+        </div>
+    </main>
+
+    <footer>
+        <p>© 2026 SGX Derivatives Daily Downloader Project | Lakehouse Architecture with Spark, MinIO & PostgreSQL</p>
+    </footer>
+
+</body>
+</html>
