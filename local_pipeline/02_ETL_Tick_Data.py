@@ -1,3 +1,5 @@
+# Xử lý biên động giá trên thị trường
+# Theo dõi biến động giá, khối lượng giao dịch, xu hướng thị trường (ticks) trên thị trường
 import os
 import sys
 import datetime

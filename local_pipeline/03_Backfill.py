@@ -1,3 +1,4 @@
+# File này dùng để nạp dữ liệu hàng loạt cho một khoảng thời gian dài trong quá khứ
 import os
 import sys
 import datetime

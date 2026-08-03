@@ -6,15 +6,18 @@ Một hệ thống **Local Data Lakehouse Pipeline** hoàn chỉnh, tự động
 
 ## 🛠️ Công nghệ cốt lõi
 
-Dự án áp dụng mô hình **Modern Data Stack Local** với các công nghệ:
+Dự án áp dụng mô hình **Modern Data Stack Local** với các công nghệ và vai trò cụ thể:
 
-![Apache Airflow](https://img.shields.io/badge/Apache_Airflow-017CE9?style=for-the-badge&logo=apacheairflow&logoColor=white)
-![Docker](https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white)
-![Apache Spark](https://img.shields.io/badge/Apache_Spark-E25A1C?style=for-the-badge&logo=apachespark&logoColor=white)
-![Delta Lake](https://img.shields.io/badge/Delta_Lake-00ADFF?style=for-the-badge&logo=delta&logoColor=white)
-![MinIO](https://img.shields.io/badge/MinIO-C92437?style=for-the-badge&logo=minio&logoColor=white)
-![Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white)
-![Grafana](https://img.shields.io/badge/Grafana-F46800?style=for-the-badge&logo=grafana&logoColor=white)
+| Công nghệ | Vai trò & Chức năng trong hệ thống |
+| :--- | :--- |
+| **![Docker](https://img.shields.io/badge/Docker-2496ED?style=flat&logo=docker&logoColor=white)** | **Đóng gói dịch vụ**: Chạy các container độc lập cho PostgreSQL, Apache Airflow, và MinIO ở local giúp dễ dàng triển khai và tránh xung đột môi trường. |
+| **![Apache Airflow](https://img.shields.io/badge/Apache_Airflow-017CE9?style=flat&logo=apacheairflow&logoColor=white)** | **Orchestrator (Bộ điều phối)**: Lập lịch và giám sát chuỗi tác vụ (DAG) tự động tải dữ liệu thô (Ingestion), chạy ETL PySpark và bảo trì định kỳ vào 22:00 hàng ngày (Thứ 2 - Thứ 6). |
+| **![MinIO](https://img.shields.io/badge/MinIO-C92437?style=flat&logo=minio&logoColor=white)** | **Local Object Storage**: Giải pháp thay thế AWS S3 chạy ở local để lưu trữ file zip/csv gốc của SGX (**Raw Zone**) và các bảng dữ liệu sau xử lý (**Processed Zone**). |
+| **![Apache Spark](https://img.shields.io/badge/Apache_Spark-E25A1C?style=flat&logo=apachespark&logoColor=white)** | **ETL Processing Engine**: Sử dụng PySpark chạy song song để làm sạch dữ liệu, chuẩn hóa schema, tính toán các chỉ số giao dịch (như VWAP - Weighted Avg Price) ở máy local. |
+| **![Delta Lake](https://img.shields.io/badge/Delta_Lake-00ADFF?style=flat&logo=delta&logoColor=white)** | **Định dạng bảng lưu trữ (Delta Format)**: Hỗ trợ các tính năng của Data Lakehouse như giao dịch ACID, Time Travel (lịch sử phiên bản), tối ưu hóa IO (`OPTIMIZE`) và dọn dẹp file cũ (`VACUUM`). |
+| **![PostgreSQL](https://img.shields.io/badge/PostgreSQL-316192?style=flat&logo=postgresql&logoColor=white)** | **Serving Database & Metadata**: <br>1. Lưu trữ metadata của Apache Airflow.<br>2. Đóng vai trò là **Serving Layer**: Đồng bộ dữ liệu tổng hợp từ MinIO qua Spark JDBC để phục vụ truy vấn của Dashboard. |
+| **![Python](https://img.shields.io/badge/Python-3776AB?style=flat&logo=python&logoColor=white)** | **Ngôn ngữ phát triển**: Viết toàn bộ mã nguồn xử lý ETL, mã điều phối DAG của Airflow, tập lệnh di chuyển dữ liệu (PostgreSQL migration) và kịch bản nạp bù dữ liệu (`Backfill`). |
+| **![Grafana](https://img.shields.io/badge/Grafana-F46800?style=flat&logo=grafana&logoColor=white)** | **Visualization Tool (Trực quan hóa)**: Kết nối trực tiếp vào Serving Database PostgreSQL để vẽ các biểu đồ theo dõi giá, khối lượng và thanh khoản thị trường phái sinh. |
 
 ---
 
@@ -35,15 +38,17 @@ graph TD
         
         TempFolder -->|Spark đọc CSV local| Spark[PySpark Engine local]
         
-        Spark -->|Xử lý & Ghi Delta TRỰC TIẾP| MinIOProc[MinIO Processed Zone - processed/]
+        Spark -->|Xử lý & Ghi Delta| MinIOProc[MinIO Processed Zone - processed/]
         
         MinIOProc -->|Delta Lake Format| Delta[Delta Tables: ticks, trade_cancellations]
+        
+        Spark -->|Đồng bộ dữ liệu tổng hợp qua JDBC| Postgres[(PostgreSQL Serving DB)]
         
         Maint[Script: 04_Maintenance.py] -->|OPTIMIZE & VACUUM| Delta
     end
 
     subgraph "Data Serving & Presentation"
-        Delta -->|Truy vấn trực tiếp| Grafana[Grafana Dashboard]
+        Postgres -->|Truy vấn dữ liệu tổng hợp| Grafana[Grafana Dashboard]
     end
 ```
 
@@ -76,10 +81,12 @@ SGX_Derivatives_Daily_Downloader/
 │   │   ├── Dockerfile           # Custom image tích hợp Java 17 + PySpark cho Airflow
 │   │   └── docker-compose.yml   # Khởi động PostgreSQL, Airflow và MinIO
 │   ├── 01_Ingestion.py          # Tải dữ liệu thô từ SGX -> MinIO (Raw Zone)
-│   ├── 02_ETL_Tick_Data.py      # PySpark ETL xử lý dữ liệu Ticks -> Delta Table
+│   ├── 02_ETL_Tick_Data.py      # PySpark ETL xử lý dữ liệu Ticks -> Delta Table & đồng bộ sang Postgres
 │   ├── 02_ETL_Trade_Cancel.py   # PySpark ETL xử lý dữ liệu Hủy lệnh -> Delta Table
 │   ├── 03_Backfill.py           # Chạy nạp bù dữ liệu hàng loạt nhiều ngày local
 │   ├── 04_Maintenance.py        # Tối ưu hóa Delta Lake local (OPTIMIZE & VACUUM)
+│   ├── migrate_csv_to_postgres.py # Di chuyển/Đồng bộ dữ liệu summary từ MinIO sang PostgreSQL
+│   ├── grafana_queries.sql      # Các câu lệnh SQL mẫu để thiết lập các Panel trên Grafana
 │   ├── DEPLOY_GUIDE.md          # Hướng dẫn chi tiết triển khai lên Cloud (DigitalOcean VPS)
 │   └── requirements.txt         # Các thư viện Python cần thiết chạy trên máy host
 │
@@ -130,11 +137,26 @@ Nếu bạn muốn nạp bù dữ liệu lịch sử trong một khoảng thời
 ---
 
 ## 📊 4. Cấu hình Giám sát qua Grafana
-Để trực quan hóa dữ liệu phái sinh từ SGX sau khi đã được lưu trữ trong MinIO:
 
-### Kết nối trực tiếp S3/MinIO Delta Tables qua AWS Athena / DuckDB
-1. Cấu hình nguồn dữ liệu trỏ vào bucket `sgx-lakehouse` trên MinIO.
-2. Sử dụng câu lệnh SQL trực tiếp trên Grafana (thông qua DuckDB hoặc các S3/Parquet connector tương thích) để vẽ các chỉ số thị trường (Volume, Price, Trade Count).
+Để trực quan hóa dữ liệu phái sinh từ SGX, hệ thống hỗ trợ 2 cơ chế kết nối dữ liệu:
+
+### Phương pháp 1: Kết nối qua Serving Database PostgreSQL (Khuyên dùng ở Local)
+Trong luồng tự động hàng ngày, PySpark ETL sẽ tự động đồng bộ dữ liệu tổng hợp (`ticks_summary`) từ MinIO sang PostgreSQL thông qua JDBC với cơ chế Idempotency chống trùng lặp dữ liệu.
+
+1. **Đồng bộ thủ công toàn bộ dữ liệu lịch sử**:
+   Nếu bạn vừa chạy Backfill một lượng lớn dữ liệu lịch sử hoặc muốn đồng bộ lại toàn bộ dữ liệu từ MinIO sang PostgreSQL:
+   ```powershell
+   cd local_pipeline
+   python migrate_csv_to_postgres.py
+   ```
+2. **Cấu hình trên Grafana**:
+   * Thêm Data Source loại **PostgreSQL** trên Grafana Web UI (`http://localhost:3000` hoặc Host Grafana của bạn).
+   * Điền thông số kết nối Postgres (Host: `localhost` hoặc tên container `sgx_postgres` nếu chạy trong mạng Docker; Tài khoản/Mật khẩu/DB mặc định: `airflow` / `airflow` / `airflow`).
+   * Sử dụng các câu lệnh SQL mẫu đã được biên soạn và tối ưu sẵn tại [grafana_queries.sql](file:///e:/DataEngineer/DE/Class3/SGX_Derivatives_Daily_Downloader/local_pipeline/grafana_queries.sql) để tạo nhanh các Panel trên Dashboard (như Stat KPI tổng hợp, Time Series trục Y kép cho Giá VWAP & Khối lượng, Bar Chart thanh khoản theo giờ, Pie Chart thị phần sản phẩm).
+
+### Phương pháp 2: Kết nối trực tiếp S3/MinIO Delta Tables qua AWS Athena / DuckDB (Môi trường Cloud/Databricks)
+1. Cấu hình nguồn dữ liệu trỏ thẳng vào bucket `sgx-lakehouse` trên MinIO/S3.
+2. Sử dụng câu lệnh SQL trực tiếp trên Grafana (thông qua DuckDB hoặc các S3/Parquet connector tương thích) để truy vấn và vẽ các chỉ số thị trường trực tiếp từ tệp tin lưu trên Object Store.
 
 ---
 

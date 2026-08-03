@@ -1,3 +1,4 @@
+# Xử lí danh sách các lệnh giao dịch bị hủy
 import os
 import sys
 import datetime
